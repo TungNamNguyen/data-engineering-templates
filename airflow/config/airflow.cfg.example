@@ -1,0 +1,122 @@
+# Airflow configuration overrides.
+# Copy this file to airflow.cfg to use it:
+#   cp config/airflow.cfg.example config/airflow.cfg
+#
+# Only include settings you want to override — Airflow uses sensible defaults
+# for everything else. Environment variables in docker-compose.yml (prefixed
+# with AIRFLOW__) take precedence over values in this file.
+#
+# Full reference: https://airflow.apache.org/docs/apache-airflow/stable/configurations-ref.html
+
+# ------------------------------------------------------------------
+# Core
+# ------------------------------------------------------------------
+[core]
+# Default timezone for DAG schedules and UI display
+# Can be UTC (default), system, or any IANA timezone (e.g. Asia/Ho_Chi_Minh)
+default_timezone = utc
+
+# Max active DAG runs per DAG
+max_active_runs_per_dag = 16
+
+# Max active task instances per DAG
+max_active_tasks_per_dag = 16
+
+# How long before a task that hasn't sent a heartbeat is considered failed (seconds)
+dagbag_import_timeout = 30
+
+# Parallelism: max task instances running globally
+parallelism = 32
+
+# ------------------------------------------------------------------
+# Scheduler
+# ------------------------------------------------------------------
+[scheduler]
+# How often (seconds) to scan the dags directory for new files
+dag_dir_list_interval = 30
+
+# How often (seconds) the scheduler sends a heartbeat
+scheduler_heartbeat_sec = 5
+
+# Number of processes to parse DAG files
+parsing_processes = 2
+
+# How many seconds to wait between file-parsing loops
+min_file_process_interval = 30
+
+# ------------------------------------------------------------------
+# DAG Processor
+# ------------------------------------------------------------------
+[dag_processor]
+# How often (seconds) the DAG processor sends a heartbeat
+dag_processor_heartbeat_sec = 5
+
+# ------------------------------------------------------------------
+# Webserver / API Server
+# ------------------------------------------------------------------
+[webserver]
+# Number of items to show per page in the UI
+page_size = 25
+
+# Session timeout (minutes)
+session_lifetime_minutes = 1440
+
+# Show recent DAG runs on the homepage
+default_dag_run_display_number = 25
+
+# ------------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------------
+[logging]
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+logging_level = INFO
+
+# Base folder for task logs
+base_log_folder = /opt/airflow/logs
+
+# How long to keep logs (days), 0 = keep forever
+# Requires log cleanup DAG or external cleanup
+dag_processor_log_target = stdout
+
+# ------------------------------------------------------------------
+# Celery (only applies when using CeleryExecutor)
+# ------------------------------------------------------------------
+[celery]
+# Number of concurrent tasks each worker can handle
+worker_concurrency = 16
+
+# Kill task if it exceeds this time limit (seconds)
+task_time_limit = 3600
+
+# Soft time limit — raises an exception instead of killing (seconds)
+task_soft_time_limit = 3300
+
+# ------------------------------------------------------------------
+# Operators
+# ------------------------------------------------------------------
+[operators]
+# Default owner for tasks
+default_owner = airflow
+
+# Default number of retries
+default_retries = 0
+
+# ------------------------------------------------------------------
+# SMTP (uncomment and configure to enable email alerts)
+# ------------------------------------------------------------------
+[smtp]
+# smtp_host = smtp.gmail.com
+# smtp_port = 587
+# smtp_starttls = True
+# smtp_ssl = False
+# smtp_user = your_email@gmail.com
+# smtp_password = your_app_password
+# smtp_mail_from = your_email@gmail.com
+# smtp_timeout = 30
+
+# ------------------------------------------------------------------
+# Email
+# ------------------------------------------------------------------
+[email]
+# email_backend = airflow.utils.email.send_email_smtp
+# email_conn_id = smtp_default
