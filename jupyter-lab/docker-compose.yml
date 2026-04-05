@@ -1,0 +1,11 @@
+services:
+  jupyter-lab:
+    image: jupyter/scipy-notebook:latest
+    container_name: jupyter-lab
+    ports:
+      - "${JUPYTER_PORT:-8889}:8888"
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-jupyter}
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    restart: unless-stopped
