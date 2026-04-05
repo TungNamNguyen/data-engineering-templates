@@ -8,6 +8,7 @@ A collection of production-ready Docker Compose templates and configurations for
 |------|-------------|---------|--------|
 | [Airflow](airflow/) | Workflow orchestration (CeleryExecutor, PostgreSQL, Redis) | 3.1.8 | Ready |
 | [MinIO](minio/) | S3-compatible object storage with Delta Lake and Iceberg examples | latest | Ready |
+| [JupyterLab](jupyter-lab/) | Interactive notebook environment for data exploration | latest | Ready |
 
 ## How to Use
 
