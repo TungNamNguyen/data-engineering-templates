@@ -1,0 +1,290 @@
+# Apache Doris local development setup.
+#
+# Default: 1 FE + 1 BE — minimal and lightweight for local dev.
+#
+# Usage:
+#   docker compose up -d
+#
+# Connect via MySQL client:
+#   mysql -h 127.0.0.1 -P 9030 -u root -p
+#
+# Web UI (no auth):
+#   http://localhost:8030
+#
+# ──────────────────────────────────────────────────────────────────────
+# IMPORTANT — Host kernel requirement (required for BE):
+#   sudo sysctl -w vm.max_map_count=2000000
+#   echo "vm.max_map_count=2000000" | sudo tee -a /etc/sysctl.conf
+#
+# ──────────────────────────────────────────────────────────────────────
+# Production-like setup (3 FE + 3 BE):
+#
+# 1. Uncomment doris-fe-2, doris-fe-3, doris-be-2, doris-be-3 and
+#    their volumes below.
+# 2. Uncomment deploy.resources blocks for resource limits.
+# 3. Create tables with: PROPERTIES("replication_num" = "3")
+# ──────────────────────────────────────────────────────────────────────
+
+services:
+  doris-fe:
+    image: ${FE_IMAGE}
+    container_name: doris-fe
+    hostname: doris-fe
+    environment:
+      FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
+      FE_ID: 1
+      DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
+    ports:
+      - "${FE_QUERY_PORT:-9030}:9030"
+      - "${FE_HTTP_PORT:-8030}:8030"
+    volumes:
+      - ./conf/fe.conf:/opt/apache-doris/fe/conf/fe.conf
+      - doris-fe-meta:/opt/apache-doris/fe/doris-meta
+      - doris-fe-log:/opt/apache-doris/fe/log
+    networks:
+      doris-net:
+        ipv4_address: 10.10.80.2
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8030/api/bootstrap"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    # Production:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '8'
+    #       memory: 16G
+    #     reservations:
+    #       cpus: '4'
+    #       memory: 8G
+
+  # doris-fe-2:
+  #   image: ${FE_IMAGE}
+  #   container_name: doris-fe-2
+  #   hostname: doris-fe-2
+  #   environment:
+  #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
+  #     FE_ID: 2
+  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
+  #   volumes:
+  #     - doris-fe-2-meta:/opt/apache-doris/fe/doris-meta
+  #     - doris-fe-2-log:/opt/apache-doris/fe/log
+  #   networks:
+  #     doris-net:
+  #       ipv4_address: 10.10.80.6
+  #   ulimits:
+  #     nofile:
+  #       soft: 1000000
+  #       hard: 1000000
+  #   healthcheck:
+  #     test: ["CMD", "curl", "--fail", "http://localhost:8030/api/bootstrap"]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '8'
+  #         memory: 16G
+  #       reservations:
+  #         cpus: '4'
+  #         memory: 8G
+
+  # doris-fe-3:
+  #   image: ${FE_IMAGE}
+  #   container_name: doris-fe-3
+  #   hostname: doris-fe-3
+  #   environment:
+  #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
+  #     FE_ID: 3
+  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
+  #   volumes:
+  #     - doris-fe-3-meta:/opt/apache-doris/fe/doris-meta
+  #     - doris-fe-3-log:/opt/apache-doris/fe/log
+  #   networks:
+  #     doris-net:
+  #       ipv4_address: 10.10.80.7
+  #   ulimits:
+  #     nofile:
+  #       soft: 1000000
+  #       hard: 1000000
+  #   healthcheck:
+  #     test: ["CMD", "curl", "--fail", "http://localhost:8030/api/bootstrap"]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '8'
+  #         memory: 16G
+  #       reservations:
+  #         cpus: '4'
+  #         memory: 8G
+
+  doris-be:
+    image: ${BE_IMAGE}
+    container_name: doris-be
+    hostname: doris-be
+    # Bypass swap check + set root password from DORIS_ROOT_PASSWORD env var.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mkdir -p /tmp/noswap
+        echo '#!/bin/bash
+        echo Filename' > /tmp/noswap/swapon
+        chmod +x /tmp/noswap/swapon
+        export PATH=/tmp/noswap:$$PATH
+        if [ -n "$$DORIS_ROOT_PASSWORD" ]; then
+          ( sleep 90 && mysql -h 10.10.80.2 -P 9030 -u root \
+            -e "ALTER USER 'root'@'%' IDENTIFIED BY '$$DORIS_ROOT_PASSWORD';" \
+            2>/dev/null && echo "Root password set." ) &
+        fi
+        exec bash entry_point.sh
+    environment:
+      FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
+      BE_ADDR: "10.10.80.3:${BE_HEARTBEAT_PORT:-9050}"
+      DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
+    ports:
+      - "${BE_WEBSERVER_PORT:-8040}:8040"
+    volumes:
+      - ./conf/be.conf:/opt/apache-doris/be/conf/be.conf
+      - ./initdb.d:/docker-entrypoint-initdb.d
+      - doris-be-storage:/opt/apache-doris/be/storage
+      - doris-be-log:/opt/apache-doris/be/log
+    networks:
+      doris-net:
+        ipv4_address: 10.10.80.3
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8040/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    # Production:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '8'
+    #       memory: 16G
+    #     reservations:
+    #       cpus: '4'
+    #       memory: 8G
+
+  # doris-be-2:
+  #   image: ${BE_IMAGE}
+  #   container_name: doris-be-2
+  #   hostname: doris-be-2
+  #   entrypoint: ["bash", "-c", "mkdir -p /tmp/noswap && echo '#!/bin/bash\necho Filename' > /tmp/noswap/swapon && chmod +x /tmp/noswap/swapon && export PATH=/tmp/noswap:$$PATH && exec bash entry_point.sh"]
+  #   environment:
+  #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
+  #     BE_ADDR: "10.10.80.4:${BE_HEARTBEAT_PORT:-9050}"
+  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
+  #   volumes:
+  #     - doris-be-2-storage:/opt/apache-doris/be/storage
+  #     - doris-be-2-log:/opt/apache-doris/be/log
+  #   networks:
+  #     doris-net:
+  #       ipv4_address: 10.10.80.4
+  #   ulimits:
+  #     nofile:
+  #       soft: 1000000
+  #       hard: 1000000
+  #   depends_on:
+  #     doris-fe:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "--fail", "http://localhost:8040/api/health"]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '8'
+  #         memory: 16G
+  #       reservations:
+  #         cpus: '4'
+  #         memory: 8G
+
+  # doris-be-3:
+  #   image: ${BE_IMAGE}
+  #   container_name: doris-be-3
+  #   hostname: doris-be-3
+  #   entrypoint: ["bash", "-c", "mkdir -p /tmp/noswap && echo '#!/bin/bash\necho Filename' > /tmp/noswap/swapon && chmod +x /tmp/noswap/swapon && export PATH=/tmp/noswap:$$PATH && exec bash entry_point.sh"]
+  #   environment:
+  #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
+  #     BE_ADDR: "10.10.80.5:${BE_HEARTBEAT_PORT:-9050}"
+  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
+  #   volumes:
+  #     - doris-be-3-storage:/opt/apache-doris/be/storage
+  #     - doris-be-3-log:/opt/apache-doris/be/log
+  #   networks:
+  #     doris-net:
+  #       ipv4_address: 10.10.80.5
+  #   ulimits:
+  #     nofile:
+  #       soft: 1000000
+  #       hard: 1000000
+  #   depends_on:
+  #     doris-fe:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "--fail", "http://localhost:8040/api/health"]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '8'
+  #         memory: 16G
+  #       reservations:
+  #         cpus: '4'
+  #         memory: 8G
+
+networks:
+  doris-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.80.0/24
+
+volumes:
+  doris-fe-meta:
+  doris-fe-log:
+  doris-be-storage:
+  doris-be-log:
+  # ── Uncomment for production-like setup ──
+  # doris-fe-2-meta:
+  # doris-fe-2-log:
+  # doris-fe-3-meta:
+  # doris-fe-3-log:
+  # doris-be-2-storage:
+  # doris-be-2-log:
+  # doris-be-3-storage:
+  # doris-be-3-log:
