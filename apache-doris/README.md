@@ -85,6 +85,8 @@ Open [http://localhost:8030](http://localhost:8030) in your browser.
 
 ### DBeaver
 
+**Option 1: MySQL driver**
+
 1. **New Database Connection** > select **MySQL**
 2. Fill in:
    - **Host:** `127.0.0.1`
@@ -94,7 +96,20 @@ Open [http://localhost:8030](http://localhost:8030) in your browser.
    - **Password:** value of `DORIS_ROOT_PASSWORD` from `.env`
 3. Click **Driver properties** tab and set:
    - `allowPublicKeyRetrieval` = `true`
+   - `useSSL` = `false`
 4. Click **Test Connection**, then **Finish**
+
+> If you get `Communications link failure`, the MySQL 8 driver may not work with Doris. Try Option 2.
+
+**Option 2: Generic JDBC (if MySQL driver fails)**
+
+1. **New Database Connection** > select **Generic JDBC**
+2. Fill in:
+   - **JDBC URL:** `jdbc:mysql://127.0.0.1:9030/`
+   - **Driver class:** `com.mysql.jdbc.Driver`
+   - **Username:** `root`
+   - **Password:** value of `DORIS_ROOT_PASSWORD` from `.env`
+3. Click **Test Connection**, then **Finish**
 
 ### JDBC (Python, Java, etc.)
 
