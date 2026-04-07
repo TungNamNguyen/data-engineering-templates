@@ -95,9 +95,11 @@ Open [http://localhost:8030](http://localhost:8030) in your browser.
    - **Username:** `root`
    - **Password:** value of `DORIS_ROOT_PASSWORD` from `.env`
 3. Click **Driver properties** tab and set:
-   - `allowPublicKeyRetrieval` = `true`
-   - `useSSL` = `false`
+   - `allowPublicKeyRetrieval` = `true` — Doris doesn't send a public key during handshake like MySQL does; without this the driver refuses to send credentials
+   - `useSSL` = `false` — Doris does not support SSL/TLS connections; the driver will fail the handshake if it tries to negotiate SSL
 4. Click **Test Connection**, then **Finish**
+
+> Use `127.0.0.1` instead of `localhost`. Some MySQL drivers treat `localhost` as a Unix socket connection, which fails since Doris runs inside a container.
 
 > If you get `Communications link failure`, the MySQL 8 driver may not work with Doris. Try Option 2.
 
