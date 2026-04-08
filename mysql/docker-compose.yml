@@ -1,0 +1,80 @@
+# MySQL — lightweight, production-ready single-node setup.
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d
+#
+# Connect:
+#   docker exec -it mysql mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE
+#   mysql -h 127.0.0.1 -P 3306 -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE}
+    container_name: mysql
+    hostname: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: UTC
+    command:
+      # Sensible defaults for a small/medium single-node server.
+      # Tune to your host via .env or by editing this block.
+      - "mysqld"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_0900_ai_ci"
+      - "--default-time-zone=+00:00"
+      - "--max-connections=200"
+      # InnoDB buffer pool — rule of thumb: 50–70% of RAM on a dedicated host.
+      - "--innodb-buffer-pool-size=1G"
+      - "--innodb-buffer-pool-instances=1"
+      # Redo log (replaces innodb_log_file_size in MySQL 8.0.30+).
+      - "--innodb-redo-log-capacity=512M"
+      - "--innodb-log-buffer-size=32M"
+      - "--innodb-flush-log-at-trx-commit=1"
+      - "--innodb-flush-method=O_DIRECT"
+      - "--innodb-file-per-table=1"
+      - "--innodb-io-capacity=2000"
+      - "--innodb-io-capacity-max=4000"
+      # Binary logging — required for point-in-time recovery and replication.
+      # In MySQL 8.4 the only supported binlog_format is ROW (no flag needed).
+      - "--log-bin=mysql-bin"
+      - "--binlog-expire-logs-seconds=604800"
+      - "--sync-binlog=1"
+      - "--server-id=1"
+      # Query logging
+      - "--slow-query-log=1"
+      - "--slow-query-log-file=/var/lib/mysql/mysql-slow.log"
+      - "--long-query-time=0.5"
+      - "--log-queries-not-using-indexes=1"
+      # Safer SQL defaults — MySQL 8.x default minus ONLY_FULL_GROUP_BY (which trips
+      # up many ORMs and ad-hoc queries). NO_ZERO_DATE / NO_ZERO_IN_DATE / ERROR_FOR_DIVISION_BY_ZERO
+      # are implied by STRICT_TRANS_TABLES in modern MySQL.
+      - "--sql-mode=STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"
+      - "--explicit-defaults-for-timestamp=1"
+    ports:
+      - "${MYSQL_PORT}:3306"
+    volumes:
+      - ./initdb.d:/docker-entrypoint-initdb.d
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    # Production: uncomment and tune to your host
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 8G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 2G
+
+volumes:
+  mysql-data:
