@@ -1,0 +1,87 @@
+# PostgreSQL — lightweight, production-ready single-node setup.
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d
+#
+# Connect:
+#   docker exec -it postgres psql -U $POSTGRES_USER -d $POSTGRES_DB
+#   psql "postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB"
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    container_name: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Store data under a subdirectory so the volume root stays clean
+      # (lets you mount the whole /var/lib/postgresql/data without lost+found issues).
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      # Sensible defaults for a small/medium single-node server.
+      # Tune to your host via .env or by editing this block.
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_size=2GB"
+      - "-c"
+      - "min_wal_size=256MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "log_min_duration_statement=500"
+      - "-c"
+      - "log_checkpoints=on"
+      - "-c"
+      - "log_connections=on"
+      - "-c"
+      - "log_disconnections=on"
+      - "-c"
+      - "log_lock_waits=on"
+      - "-c"
+      - "log_temp_files=0"
+      - "-c"
+      - "log_timezone=UTC"
+      - "-c"
+      - "timezone=UTC"
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - ./initdb.d:/docker-entrypoint-initdb.d
+      - postgres-data:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    # Production: uncomment and tune to your host
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 8G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 2G
+
+volumes:
+  postgres-data:
