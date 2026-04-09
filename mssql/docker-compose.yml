@@ -1,0 +1,111 @@
+# Microsoft SQL Server — lightweight, production-ready single-node setup.
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d
+#
+# Connect:
+#   docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd \
+#       -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C
+#   sqlcmd -S 127.0.0.1,1433 -U sa -P "$MSSQL_SA_PASSWORD" -C
+#
+# Note on init scripts:
+#   Unlike postgres/mysql, the mssql image has no built-in initdb.d mechanism.
+#   The `mssql-init` sidecar below waits for the server to become ready, then
+#   runs every *.sql in ./initdb.d in alphabetical order against the `master`
+#   database exactly once. Safe to leave running — it exits after it succeeds.
+
+services:
+  mssql:
+    image: ${MSSQL_IMAGE}
+    container_name: mssql
+    hostname: mssql
+    # The image already runs as the non-root `mssql` user internally; do not
+    # override `user:` — doing so breaks creation of /.system on startup.
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: ${MSSQL_PID}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_COLLATION: ${MSSQL_COLLATION}
+      TZ: UTC
+      # Sensible defaults for a small/medium single-node server.
+      # Tune to your host via .env or by adding MSSQL_MEMORY_LIMIT_MB etc.
+      # Full list: https://learn.microsoft.com/sql/linux/sql-server-linux-configure-environment-variables
+      MSSQL_AGENT_ENABLED: "true"
+      MSSQL_ENABLE_HADR: "0"
+      MSSQL_TCP_PORT: "1433"
+      # Cap SQL Server memory usage (MB). Rule of thumb: 75–80% of RAM available
+      # to the container on a dedicated host. Comment out to let it grow.
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+    ports:
+      - "${MSSQL_PORT}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      # sqlcmd lives at /opt/mssql-tools18/bin on 2022 images.
+      # -C trusts the self-signed server cert (required on 2022+).
+      test:
+        - "CMD-SHELL"
+        - "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    # Production: uncomment and tune to your host
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 8G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 2G
+
+  # One-shot initializer. Waits for the server, then runs every *.sh and
+  # *.sql in ./initdb.d in alphabetical order. The .sh files open their own
+  # sqlcmd sessions (typically at server scope); the .sql files are run
+  # against MSSQL_DATABASE, which 01-infra-setup.sh is responsible for
+  # creating. Idempotent DDL is the caller's responsibility — the provided
+  # scripts use IF NOT EXISTS / IF ... IS NULL.
+  mssql-init:
+    image: ${MSSQL_IMAGE}
+    container_name: mssql-init
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_DATABASE: ${MSSQL_DATABASE}
+      MSSQL_USER: ${MSSQL_USER}
+      MSSQL_PASSWORD: ${MSSQL_PASSWORD}
+      # Passed through to initdb.d/01-infra-setup.sh for role creation.
+      TRANSFORM_USER_PASSWORD: ${TRANSFORM_USER_PASSWORD}
+      READ_USER_PASSWORD: ${READ_USER_PASSWORD}
+    volumes:
+      - ./initdb.d:/initdb.d:ro
+    entrypoint:
+      - "/bin/bash"
+      - "-c"
+      - |
+        set -euo pipefail
+        SQLCMD=/opt/mssql-tools18/bin/sqlcmd
+        echo "[mssql-init] dispatching /initdb.d/*"
+        shopt -s nullglob
+        for f in /initdb.d/*; do
+          case "$$f" in
+            *.sh)
+              echo "[mssql-init] running $$f"
+              bash "$$f"
+              ;;
+            *.sql)
+              echo "[mssql-init] running $$f"
+              $$SQLCMD -S mssql -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -d "$$MSSQL_DATABASE" -i "$$f"
+              ;;
+          esac
+        done
+        echo "[mssql-init] done"
+    restart: "no"
+
+volumes:
+  mssql-data:
