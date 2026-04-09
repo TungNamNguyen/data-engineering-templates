@@ -10,6 +10,7 @@ A collection of production-ready Docker Compose templates and configurations for
 | [Apache Doris](apache-doris/) | Real-time analytical database (MySQL-compatible) | 3.0.3 | Ready |
 | [ClickHouse](clickhouse/) | Columnar OLAP database for real-time analytics | 24.8 | Ready |
 | [MinIO](minio/) | S3-compatible object storage with Delta Lake and Iceberg examples | latest | Ready |
+| [Microsoft SQL Server](mssql/) | Microsoft's flagship relational database (T-SQL, SQL Agent, rich tooling) | 2022 | Ready |
 | [MySQL](mysql/) | World's most popular open-source relational database (binlog/PITR enabled) | 8.4 LTS | Ready |
 | [PostgreSQL](postgres/) | Open-source relational database with strong SQL support and rich extensions | 16 | Ready |
 | [JupyterLab](jupyter-lab/) | Interactive notebook environment for data exploration | latest | Ready |
