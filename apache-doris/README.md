@@ -133,7 +133,9 @@ apache-doris/
 │   ├── fe.conf          # FE configuration (JVM, connections, metadata)
 │   └── be.conf          # BE configuration (JVM, memory, compaction, buffer)
 ├── initdb.d/
-│   └── 01_create_databases.sql  # Creates databases and users on first startup
+│   ├── 01-infra-setup.sh        # Root password + bronze/silver/gold dbs + service accounts
+│   ├── 02-logical-setup.sql     # No-op for Doris (no schema layer)
+│   └── 03-governance.sql        # Grants for transform_user / read_user
 └── README.md            # This file
 ```
 
@@ -215,30 +217,59 @@ SHOW BACKEND CONFIG LIKE "%key%";
 
 ## Init scripts (initdb.d/)
 
-The `initdb.d/` folder is mounted into the BE container. On **first startup only**, after BE registers with FE, it automatically executes files in alphabetical order:
+Unlike postgres/mysql/clickhouse, the Doris image has no reliable built-in `initdb.d` mechanism, so the `doris-init` sidecar in [docker-compose.yml](docker-compose.yml) plays that role. It waits for both FE and BE to become healthy, then dispatches every `*.sh` and `*.sql` file in `./initdb.d` in alphabetical order via the `mysql` client against the FE query port.
 
-| File type | Behavior |
-|-----------|----------|
-| `.sql` | Executed against Doris via MySQL protocol |
-| `.sh` | Executed as a shell script |
-| `.sql.gz` | Decompressed, then executed as SQL |
+Every template in this repo follows the same three-file layout:
 
-The included `initdb.d/01_create_databases.sql` creates `example_db` and a sample `dev` user. Modify or remove it for your own project.
+| File | Purpose |
+|---|---|
+| [`initdb.d/01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Sets the Doris root password from `DORIS_ROOT_PASSWORD`, creates the `bronze`, `silver`, `gold` databases, and creates the data-engineering service accounts. |
+| [`initdb.d/02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | No-op for Doris — it follows the MySQL model with no schema layer between database and table, so the layers *are* databases. Kept for layout consistency with Postgres/MSSQL. |
+| [`initdb.d/03-governance.sql`](initdb.d/03-governance.sql) | Grants `transform_user` full privileges and `read_user` SELECT on all three layers. |
 
-To add your own, drop files with a numbered prefix for ordering:
+### Accounts and layers
 
+| Account | Privileges | Notes |
+|---|---|---|
+| `root` | Superuser | Password from `DORIS_ROOT_PASSWORD` (set by `01-infra-setup.sh`) |
+| `transform_user` | `ALL` on `bronze.*`, `silver.*`, `gold.*` | Full DDL + DML on all three layers |
+| `read_user` | `SELECT_PRIV` on `bronze.*`, `silver.*`, `gold.*` | Read-only; covers existing + future tables |
+
+The medallion layers (**bronze** raw, **silver** cleaned, **gold** curated) live as standalone databases. Doris does not have a schema layer between database and table — unlike Postgres/MSSQL, which nest the layers as schemas under one database.
+
+Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the first `docker compose up -d`. Avoid single quotes in the values.
+
+### When init scripts run
+
+`doris-init` is a one-shot sidecar (`restart: "no"`) — after a successful first run it stays exited, and subsequent `docker compose up -d` calls do nothing. The scripts only really "run once" against a fresh cluster.
+
+| Action | Cluster state | Init runs? |
+|---|---|---|
+| First `docker compose up -d` | empty | **yes** |
+| `docker compose restart` | populated | no (exited sidecar is not restarted) |
+| `docker compose down` then `up -d` | populated | no — sidecar is already `Exited (0)`, compose reuses it |
+| `docker compose down -v` then `up -d` | wiped → empty | **yes** |
+| Editing a file in `initdb.d/`, then `up -d` | populated | no — the file change is irrelevant until the volume is wiped or the sidecar is force-recreated |
+
+Treat `initdb.d/` as **bootstrap, not migrations**. For ongoing schema changes, apply SQL manually or with a real migration tool.
+
+To re-run the full pipeline without wiping the cluster (make sure the scripts are idempotent — the included ones use `IF NOT EXISTS` / `ALTER USER`):
+
+```bash
+docker compose up -d --force-recreate doris-init
 ```
-initdb.d/
-├── 01_create_databases.sql   # included (databases + users)
-├── 02_more_databases.sql     # your own
-└── 03_more_users.sql         # your own
+
+To apply a single SQL file by hand:
+
+```bash
+# Re-apply the grants (idempotent — safe to re-run)
+docker exec -i doris-fe mysql -h 127.0.0.1 -P 9030 -u root -p"$DORIS_ROOT_PASSWORD" \
+  < initdb.d/03-governance.sql
 ```
 
-If the folder is empty, nothing happens.
+If you edit `01-infra-setup.sh` and want the changes reflected, read it, adapt the inline SQL, and execute it against the FE by hand — the `.sh` file itself isn't something you can pipe through `mysql`.
 
-> **Important:** Init scripts run before BE is fully alive. Only `CREATE DATABASE` and user management work reliably. `CREATE TABLE` will fail because it needs an available BE. Create tables manually after the cluster is healthy, or use a shell script with a sleep/retry loop.
-
-> Use `"replication_num" = "1"` with 1 BE. With 3 BEs, use `"3"` (the production default).
+> **Replication note:** Use `"replication_num" = "1"` when creating tables with 1 BE. With 3 BEs, use `"3"` (the production default). Table creation is intentionally outside the initdb scripts — create them manually or via a migration tool once the cluster is fully healthy.
 
 ## Scaling to production-like setup
 
@@ -380,16 +411,6 @@ docker network inspect $(docker network ls -q) 2>/dev/null | grep Subnet
 
 Then change the subnet and all IPs in `docker-compose.yml` to a free range.
 
-### Init scripts cannot CREATE TABLE
-
-The `initdb.d/` scripts run right after BE registers with FE but **before BE reports as alive**. At that point, FE shows 0 available backends, so any `CREATE TABLE` statement fails with:
-
-```
-replication num should be less than the number of available backends
-```
-
-**Workaround:** Only use `CREATE DATABASE` and user management in init scripts. Create tables manually after the cluster is fully healthy (`docker compose ps` shows both services as `healthy`).
-
 ### Config files — `priority_networks` appending
 
 The Doris entrypoint automatically appends `priority_networks = <subnet>` to both `fe.conf` and `be.conf` on startup. Since these files are bind-mounted from the host, the change persists. The entrypoint checks if the line already exists before appending, so it only happens **once** — subsequent restarts do not add duplicates.
@@ -400,7 +421,7 @@ This is why `priority_networks` and port definitions are intentionally excluded 
 
 The `DORIS_ROOT_PASSWORD` environment variable in the official Docker image is unreliable — it does not always set the root password. Connections from inside the FE container (`localhost`) also bypass authentication entirely — this is normal Doris behavior.
 
-**Workaround:** The BE entrypoint in `docker-compose.yml` includes a background job that runs `ALTER USER` after 90 seconds (when FE is ready), using the `DORIS_ROOT_PASSWORD` value from `.env`. The password is enforced for external connections (DBeaver, JDBC, any remote client).
+**Workaround:** The `doris-init` sidecar in `docker-compose.yml` runs `ALTER USER 'root'@'%' IDENTIFIED BY '...'` as its first init step (in `01-infra-setup.sh`), using the `DORIS_ROOT_PASSWORD` value from `.env`. The password is enforced for external connections (DBeaver, JDBC, any remote client). If the value is empty, the ALTER is a no-op and root stays passwordless — fine for local dev.
 
 ### Web UI has no authentication
 
