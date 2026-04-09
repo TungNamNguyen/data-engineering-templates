@@ -113,18 +113,29 @@ with engine.connect() as conn:
 
 The `initdb.d/` folder is mounted at `/docker-entrypoint-initdb.d/` in the container. On **first startup only** — when the data directory is empty — the entrypoint runs every `*.sql`, `*.sql.gz`, and `*.sh` in alphabetical order against the `POSTGRES_DB`.
 
-The included [`initdb.d/01_create_schema.sql`](initdb.d/01_create_schema.sql) creates an `example` schema with a sample `events` table and useful indexes (including a GIN index on JSONB).
+Every template in this repo follows the same three-file layout:
 
-Add your own scripts with a numbered prefix to control order:
+| File | Purpose |
+|---|---|
+| [`01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Creates the data-engineering service accounts. Passwords are injected from env vars via `psql`'s `:'var'` binding (safely quoted, never on the command line). |
+| [`02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | Creates the `bronze`, `silver`, `gold` schemas inside `POSTGRES_DB`, owned by `transform_user`. |
+| [`03-governance.sql`](initdb.d/03-governance.sql) | Grants `read_user` SELECT on all three layers, plus default privileges so future tables created by `transform_user` become automatically visible. |
 
-```
-initdb.d/
-├── 01_create_schema.sql     # included
-├── 02_create_roles.sql      # your own
-└── 03_seed_data.sql         # your own
-```
+### Accounts and layers
+
+| Role | Privileges | Notes |
+|---|---|---|
+| `postgres` | Superuser | From `POSTGRES_USER` / `POSTGRES_PASSWORD` |
+| `transform_user` | Owner of `bronze`, `silver`, `gold` schemas | Full DDL + DML on all three layers |
+| `read_user` | `USAGE` + `SELECT` on `bronze`, `silver`, `gold` | Read-only; future tables auto-granted via default privileges |
+
+The layers follow the medallion convention: **bronze** for raw, **silver** for cleaned, **gold** for curated. They live as *schemas* inside `POSTGRES_DB` (Postgres has a real schema layer — MySQL/ClickHouse/Doris don't, so they use databases instead).
+
+Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the first `docker compose up -d`. Avoid single quotes in the values.
 
 ### When init scripts run
+
+The Postgres entrypoint runs every `*.sh` and `*.sql` in `initdb.d/` **once**, on the very first boot against an empty data directory. After that, the volume is marked as initialized and the scripts are never touched again.
 
 | Action | Volume state | Init runs? |
 |---|---|---|
@@ -132,15 +143,18 @@ initdb.d/
 | `docker compose restart` | populated | no |
 | `docker compose down` then `up -d` | populated | no |
 | `docker compose down -v` then `up -d` | wiped → empty | **yes** |
-| Editing the `.sql` file | populated | no — the file change is irrelevant |
+| Editing a file in `initdb.d/`, then `up -d` | populated | no — the file change is irrelevant until the volume is wiped |
 
 Treat `initdb.d/` as **bootstrap, not migrations**. For ongoing schema changes, use a real migration tool (Flyway, Liquibase, Alembic, golang-migrate, dbmate).
 
-To apply a script change without wiping data:
+To apply a script change without wiping data, pipe the file through `psql` manually:
 
 ```bash
-docker exec -i postgres psql -U postgres -d app < initdb.d/01_create_schema.sql
+# Re-apply the grants (idempotent — safe to re-run)
+docker exec -i postgres psql -U postgres -d app < initdb.d/03-governance.sql
 ```
+
+If you edit `01-infra-setup.sh` or `02-logical-setup.sql` and want the changes reflected without wiping data, you'll need to run the equivalent SQL by hand (the `.sh` file isn't something you can pipe through `psql` — read it, adapt the inline SQL, and execute it as superuser).
 
 ## Data persistence
 

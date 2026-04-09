@@ -17,6 +17,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Passed through to initdb.d/01-infra-setup.sh for role creation.
+      TRANSFORM_USER_PASSWORD: ${TRANSFORM_USER_PASSWORD}
+      READ_USER_PASSWORD: ${READ_USER_PASSWORD}
       # Store data under a subdirectory so the volume root stays clean
       # (lets you mount the whole /var/lib/postgresql/data without lost+found issues).
       PGDATA: /var/lib/postgresql/data/pgdata
