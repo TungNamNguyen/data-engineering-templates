@@ -18,6 +18,9 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # Passed through to initdb.d/01-infra-setup.sh for role creation.
+      TRANSFORM_USER_PASSWORD: ${TRANSFORM_USER_PASSWORD}
+      READ_USER_PASSWORD: ${READ_USER_PASSWORD}
       TZ: UTC
     command:
       # Sensible defaults for a small/medium single-node server.

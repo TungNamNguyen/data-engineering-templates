@@ -115,20 +115,32 @@ with engine.connect() as conn:
 
 ## Init scripts (initdb.d/)
 
-The `initdb.d/` folder is mounted at `/docker-entrypoint-initdb.d/` in the container. On **first startup only** — when the data directory is empty — the entrypoint runs every `*.sql`, `*.sql.gz`, and `*.sh` in alphabetical order against the `MYSQL_DATABASE`.
+The `initdb.d/` folder is mounted at `/docker-entrypoint-initdb.d/` in the container. On **first startup only** — when the data directory is empty — the entrypoint runs every `*.sql`, `*.sql.gz`, and `*.sh` in alphabetical order.
 
-The included [`initdb.d/01_create_schema.sql`](initdb.d/01_create_schema.sql) creates a sample `events` table with useful indexes.
+Every template in this repo follows the same three-file layout:
 
-Add your own scripts with a numbered prefix to control order:
+| File | Purpose |
+|---|---|
+| [`01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Creates the `bronze`, `silver`, `gold` databases and the data-engineering service accounts. Passwords come from env vars, are escaped, and piped over stdin (never on the command line). |
+| [`02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | No-op for MySQL — there is no schema layer between database and table, so the layers *are* databases. Kept for layout consistency with Postgres/MSSQL. |
+| [`03-governance.sql`](initdb.d/03-governance.sql) | Grants `transform_user` full privileges and `read_user` SELECT on all three layers. MySQL's `db.*` wildcard covers future tables automatically. |
 
-```
-initdb.d/
-├── 01_create_schema.sql     # included
-├── 02_create_users.sql      # your own
-└── 03_seed_data.sql         # your own
-```
+### Accounts and layers
+
+| Account | Privileges | Notes |
+|---|---|---|
+| `root` | Superuser | From `MYSQL_ROOT_PASSWORD` |
+| `${MYSQL_USER}` (default `mysql`) | All privileges on `${MYSQL_DATABASE}` (default `app`) | Created by the entrypoint from env vars — the legacy app user |
+| `transform_user` | `ALL PRIVILEGES` on `bronze.*`, `silver.*`, `gold.*` | Full DDL + DML on all three layers |
+| `read_user` | `SELECT` on `bronze.*`, `silver.*`, `gold.*` | Read-only; covers existing + future tables |
+
+The medallion layers (**bronze** raw, **silver** cleaned, **gold** curated) live as standalone databases *in addition to* the pre-existing `${MYSQL_DATABASE}`. Postgres and MSSQL can nest them as schemas under one database; MySQL cannot.
+
+Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the first `docker compose up -d`. Avoid single quotes in the values.
 
 ### When init scripts run
+
+The MySQL entrypoint runs every `*.sh`, `*.sql`, and `*.sql.gz` in `initdb.d/` **once**, on the very first boot against an empty data directory. After that, the volume is marked as initialized and the scripts are never touched again.
 
 | Action | Volume state | Init runs? |
 |---|---|---|
@@ -136,15 +148,18 @@ initdb.d/
 | `docker compose restart` | populated | no |
 | `docker compose down` then `up -d` | populated | no |
 | `docker compose down -v` then `up -d` | wiped → empty | **yes** |
-| Editing the `.sql` file | populated | no — the file change is irrelevant |
+| Editing a file in `initdb.d/`, then `up -d` | populated | no — the file change is irrelevant until the volume is wiped |
 
 Treat `initdb.d/` as **bootstrap, not migrations**. For ongoing schema changes, use a real migration tool (Flyway, Liquibase, Alembic, golang-migrate, dbmate).
 
-To apply a script change without wiping data:
+To apply a script change without wiping data, pipe the file through `mysql` manually:
 
 ```bash
-docker exec -i mysql mysql -uroot -proot app < initdb.d/01_create_schema.sql
+# Re-apply the grants (idempotent — safe to re-run)
+docker exec -i mysql mysql -uroot -proot < initdb.d/03-governance.sql
 ```
+
+If you edit `01-infra-setup.sh` or `02-logical-setup.sql` and want the changes reflected without wiping data, you'll need to run the equivalent SQL by hand (the `.sh` file isn't something you can pipe through `mysql` — read it, adapt the inline SQL, and execute it as `root`).
 
 ## Data persistence
 
