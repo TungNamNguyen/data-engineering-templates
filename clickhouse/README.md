@@ -105,35 +105,31 @@ print(client.query('SELECT version()').result_rows)
 
 The `initdb.d/` folder is mounted at `/docker-entrypoint-initdb.d/` in the container. On **first startup only** — when `/var/lib/clickhouse` is empty — the entrypoint runs every `*.sql` and `*.sh` in alphabetical order via `clickhouse-client`.
 
-The included [`initdb.d/01_create_database.sql`](initdb.d/01_create_database.sql) creates `example_db` and a sample `events` table:
+Every template in this repo follows the same three-file layout:
 
-```sql
-CREATE DATABASE IF NOT EXISTS example_db;
+| File | Purpose |
+|---|---|
+| [`01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Creates the `bronze`, `silver`, `gold` databases and the data-engineering service accounts. Passwords come from env vars, are escaped, and piped over stdin. |
+| [`02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | No-op for ClickHouse — there is no schema layer between database and table, so the layers *are* databases. Kept for layout consistency with Postgres/MSSQL. |
+| [`03-governance.sql`](initdb.d/03-governance.sql) | Grants `transform_user` full privileges and `read_user` SELECT on all three layers. `db.*` covers future tables automatically. |
 
-CREATE TABLE IF NOT EXISTS example_db.events
-(
-    event_id    UInt64,
-    event_time  DateTime,
-    user_id     UInt64,
-    event_type  LowCardinality(String),
-    payload     String
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(event_time)
-ORDER BY (event_type, event_time, user_id)
-TTL event_time + INTERVAL 90 DAY;
-```
+SQL-driven user management requires `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1` on the server — this is already set in [docker-compose.yml](docker-compose.yml).
 
-Add your own scripts with a numbered prefix to control order:
+### Accounts and layers
 
-```
-initdb.d/
-├── 01_create_database.sql   # included
-├── 02_create_users.sql      # your own
-└── 03_seed_data.sql         # your own
-```
+| Account | Privileges | Notes |
+|---|---|---|
+| `${CLICKHOUSE_USER}` (default `default`) | Superuser | From `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` |
+| `transform_user` | `ALL` on `bronze.*`, `silver.*`, `gold.*` | Full DDL + DML on all three layers |
+| `read_user` | `SELECT` on `bronze.*`, `silver.*`, `gold.*` | Read-only; covers existing + future tables |
+
+The medallion layers (**bronze** raw, **silver** cleaned, **gold** curated) live as standalone databases *in addition to* the pre-existing `${CLICKHOUSE_DB}`.
+
+Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the first `docker compose up -d`. Avoid single quotes in the values.
 
 ### When init scripts run
+
+The ClickHouse entrypoint runs every `*.sh` and `*.sql` in `initdb.d/` **once**, on the very first boot against an empty data directory. After that, the `/var/lib/clickhouse` volume is marked as initialized and the scripts are never touched again.
 
 | Action | Volume state | Init runs? |
 |---|---|---|
@@ -141,16 +137,19 @@ initdb.d/
 | `docker compose restart` | populated | no |
 | `docker compose down` then `up -d` | populated | no |
 | `docker compose down -v` then `up -d` | wiped → empty | **yes** |
-| Editing the `.sql` file | populated | no — the file change is irrelevant |
+| Editing a file in `initdb.d/`, then `up -d` | populated | no — the file change is irrelevant until the volume is wiped |
 
 Treat `initdb.d/` as **bootstrap, not migrations**. For ongoing schema changes, apply SQL manually or with a real migration tool (Flyway, Liquibase, dbt, golang-migrate).
 
-To apply a script change without wiping data:
+To apply a script change without wiping data, pipe the file through `clickhouse-client` manually:
 
 ```bash
+# Re-apply the grants (idempotent — safe to re-run)
 docker exec -i clickhouse clickhouse-client --user default --password \
-  < initdb.d/01_create_database.sql
+  < initdb.d/03-governance.sql
 ```
+
+If you edit `01-infra-setup.sh` or `02-logical-setup.sql` and want the changes reflected without wiping data, you'll need to run the equivalent SQL by hand (the `.sh` file isn't something you can pipe through `clickhouse-client` — read it, adapt the inline SQL, and execute it as `default`).
 
 ## Data persistence
 

@@ -18,6 +18,9 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      # Passed through to initdb.d/01-infra-setup.sh for role creation.
+      TRANSFORM_USER_PASSWORD: ${TRANSFORM_USER_PASSWORD}
+      READ_USER_PASSWORD: ${READ_USER_PASSWORD}
     ports:
       - "${CLICKHOUSE_HTTP_PORT}:8123"      # HTTP / DBeaver / JDBC
       - "${CLICKHOUSE_NATIVE_PORT}:9000"    # Native protocol / clickhouse-client
