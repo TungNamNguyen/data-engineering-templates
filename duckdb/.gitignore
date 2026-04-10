@@ -1,0 +1,5 @@
+.env
+
+# DuckDB file + anything else the container writes into the bind mount
+data/*
+!data/.gitkeep

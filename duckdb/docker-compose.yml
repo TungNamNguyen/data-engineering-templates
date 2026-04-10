@@ -1,0 +1,56 @@
+# DuckDB — file-based analytical DWH in a lightweight container.
+#
+# ./data is bind-mounted into /data so that:
+#   * the .duckdb file is directly visible and backup-able from the host
+#   * CSV / Parquet / JSON files you drop into ./data/ are immediately
+#     queryable via read_csv() / read_parquet() / read_json() — no load
+#     step required
+#   * host tools (Python, dbt-duckdb, notebooks) can open the same file
+#     directly, provided nothing else holds a write lock on it
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose build
+#   docker compose up -d
+#
+# Connect:
+#   docker exec -it duckdb duckdb /data/${DUCKDB_DB}
+
+services:
+  duckdb:
+    build:
+      context: .
+      args:
+        DUCKDB_VERSION: ${DUCKDB_VERSION}
+    image: duckdb-local:${DUCKDB_VERSION}
+    container_name: duckdb
+    hostname: duckdb
+    # tini as PID 1 — forwards signals cleanly and reaps zombies during
+    # the narrow window before `exec tail` takes over.
+    init: true
+    # Defense-in-depth: block privilege escalation via setuid binaries,
+    # and make the root filesystem read-only. The container only needs
+    # to write to /data (bind mount) and /tmp (tmpfs below).
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./data:/data
+      - ./init.sql:/init.sql:ro
+    # Apply init.sql (idempotent — CREATE ... IF NOT EXISTS) on every
+    # start, then keep the container alive via `tail`. `exec` replaces
+    # the sh wrapper so signals reach tail directly.
+    command: sh -c "duckdb /data/${DUCKDB_DB} < /init.sql && exec tail -f /dev/null"
+    restart: unless-stopped
+    # Nothing to flush on shutdown — skip the default 10s grace period.
+    stop_grace_period: 5s
+    # Cap stdout/stderr so a chatty query can't fill the host disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # No ports — DuckDB is embedded, not a server.
+    # No healthcheck — there is no daemon to probe.
