@@ -9,20 +9,19 @@
 #     directly, provided nothing else holds a write lock on it
 #
 # Usage:
-#   cp .env.example .env
-#   docker compose build
 #   docker compose up -d
+#   docker exec -it duckdb duckdb /data/app.duckdb
 #
-# Connect:
-#   docker exec -it duckdb duckdb /data/${DUCKDB_DB}
+# All configuration has sensible defaults — copy .env.example to .env only
+# if you want to override DUCKDB_VERSION or DUCKDB_DB.
 
 services:
   duckdb:
     build:
       context: .
       args:
-        DUCKDB_VERSION: ${DUCKDB_VERSION}
-    image: duckdb-local:${DUCKDB_VERSION}
+        DUCKDB_VERSION: ${DUCKDB_VERSION:-1.2.2}
+    image: duckdb-local:${DUCKDB_VERSION:-1.2.2}
     container_name: duckdb
     hostname: duckdb
     # tini as PID 1 — forwards signals cleanly and reaps zombies during
@@ -42,7 +41,7 @@ services:
     # Apply init.sql (idempotent — CREATE ... IF NOT EXISTS) on every
     # start, then keep the container alive via `tail`. `exec` replaces
     # the sh wrapper so signals reach tail directly.
-    command: sh -c "duckdb /data/${DUCKDB_DB} < /init.sql && exec tail -f /dev/null"
+    command: sh -c "duckdb /data/${DUCKDB_DB:-app.duckdb} < /init.sql && exec tail -f /dev/null"
     restart: unless-stopped
     # Nothing to flush on shutdown — skip the default 10s grace period.
     stop_grace_period: 5s
