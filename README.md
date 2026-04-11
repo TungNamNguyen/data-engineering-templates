@@ -8,6 +8,7 @@ A collection of production-ready Docker Compose templates and configurations for
 |------|-------------|---------|--------|
 | [Apache Airflow](apache-airflow/) | Workflow orchestration for data pipelines | 3.1.8 | Ready |
 | [Apache Doris](apache-doris/) | Real-time analytical database, MySQL-compatible | 3.0.3 | Ready |
+| [Apache Superset](apache-superset/) | BI tool for exploring data and building dashboards | 4.1.1 | Ready |
 | [ClickHouse](clickhouse/) | Columnar database for real-time analytics | 24.8 | Ready |
 | [DuckDB](duckdb/) | In-process analytical database, like SQLite for analytics | 1.2.2 | Ready |
 | [MinIO](minio/) | S3-compatible object storage | latest | Ready |
