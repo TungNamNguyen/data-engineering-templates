@@ -1,0 +1,73 @@
+# Metabase — production-ready single-host stack.
+#
+# Services: Metabase web (Jetty) + Postgres (application / metadata DB).
+#
+# Usage:
+#   cp .env.example .env          # edit MB_ENCRYPTION_SECRET_KEY first
+#   docker compose up -d
+#   open http://localhost:3000    # complete the setup wizard on first run
+#
+# The Postgres here stores Metabase's own metadata (questions, dashboards,
+# users, permissions) — it is NOT the data you visualize. Point Metabase at
+# your warehouses from the UI under Admin → Databases.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: metabase-postgres
+    hostname: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  metabase:
+    image: ${METABASE_IMAGE}
+    container_name: metabase
+    hostname: metabase
+    environment:
+      # --- Application (metadata) database wiring ---
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: ${POSTGRES_DB}
+      MB_DB_USER: ${POSTGRES_USER}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+      # --- Web server ---
+      MB_JETTY_HOST: 0.0.0.0
+      MB_JETTY_PORT: 3000
+      MB_SITE_URL: ${MB_SITE_URL}
+      MB_SITE_NAME: ${MB_SITE_NAME}
+      # --- Secrets / runtime ---
+      MB_ENCRYPTION_SECRET_KEY: ${MB_ENCRYPTION_SECRET_KEY}
+      MB_PASSWORD_COMPLEXITY: ${MB_PASSWORD_COMPLEXITY:-normal}
+      JAVA_TIMEZONE: ${MB_TIMEZONE:-UTC}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx2g}
+    ports:
+      - "${METABASE_PORT}:3000"
+    volumes:
+      - metabase-data:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-I", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  metabase-data:
