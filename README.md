@@ -16,6 +16,7 @@ A collection of production-ready Docker Compose templates and configurations for
 | [MySQL](mysql/) | The world's most popular open-source relational database | 8.4 LTS | Ready |
 | [PostgreSQL](postgres/) | Open-source relational database with a rich extension ecosystem | 16 | Ready |
 | [JupyterLab](jupyter-lab/) | Interactive notebook environment for data exploration | latest | Ready |
+| [Metabase](metabase/) | BI tool for asking questions about your data | 0.52.4 | Ready |
 
 ## How to Use
 
