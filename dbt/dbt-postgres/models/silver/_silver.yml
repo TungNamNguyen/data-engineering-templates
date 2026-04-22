@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: silver_customers
+    description: "Cleaned customer records with country name resolved."
+    columns:
+      - name: customer_id
+        description: "Primary key."
+        tests: [unique, not_null]
+      - name: email
+        description: "Lowercased email."
+        tests: [not_null]
+      - name: country_code
+        tests:
+          - relationships:
+              to: ref('country_codes')
+              field: code
+
+  - name: silver_orders
+    description: "Cleaned orders. `amount_usd` is derived from `amount_cents` via cents_to_dollars()."
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('silver_customers')
+              field: customer_id
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['pending', 'completed', 'refunded']

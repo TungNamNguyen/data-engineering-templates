@@ -1,0 +1,24 @@
+[project]
+name = "dbt"
+version = "0.1.0"
+description = "dbt monorepo — one uv environment, one set of dev tooling, multiple dbt projects under sibling subfolders."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "dbt-core>=1.9,<2.0",
+    "dbt-postgres>=1.9,<2.0",
+]
+
+# Swap adapters here for other warehouses, e.g.:
+#   [project.optional-dependencies]
+#   duckdb     = ["dbt-duckdb>=1.9,<2.0"]
+#   clickhouse = ["dbt-clickhouse>=1.8,<2.0"]
+# Then: uv sync --extra duckdb
+
+[dependency-groups]
+# Installed by default with `uv sync`. Opt out with `uv sync --no-dev`.
+dev = [
+    "sqlfluff>=3.2,<4.0",
+    "sqlfluff-templater-dbt>=3.2,<4.0",
+    "pre-commit>=4.0,<5.0",
+]

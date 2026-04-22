@@ -1,0 +1,13 @@
+# Secrets & local env
+.env
+
+# uv / Python
+.venv/
+__pycache__/
+*.pyc
+
+# dbt build artifacts (present in every project subfolder)
+**/target/
+**/dbt_packages/
+**/logs/
+**/.user.yml

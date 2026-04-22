@@ -1,0 +1,23 @@
+# dbt connection profile — shared by every dbt project in this monorepo.
+#
+# The Makefile exports DBT_PROFILES_DIR to the monorepo root so any project
+# under dbt-postgres/, dbt-duckdb/, etc. finds this file automatically. For
+# ad-hoc commands from a project subfolder, pass --profiles-dir .. .
+#
+# All credentials come from the environment — copy .env.example to .env and
+# `set -a; source .env; set +a` before running dbt, or inject via your shell
+# / orchestrator of choice.
+
+dbt_postgres:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host:     "{{ env_var('DBT_HOST', 'localhost') }}"
+      port:     "{{ env_var('DBT_PORT', '5432') | as_number }}"
+      user:     "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname:   "{{ env_var('DBT_DATABASE', 'app') }}"
+      schema:   "{{ env_var('DBT_SCHEMA', 'bronze') }}"
+      threads:  4
+      sslmode:  "{{ env_var('DBT_SSLMODE', 'prefer') }}"
