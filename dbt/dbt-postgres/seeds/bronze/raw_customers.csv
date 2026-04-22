@@ -1,7 +1,0 @@
-id,first_name,last_name,email,country_code,signup_date
-1,Alice,Johnson,alice@example.com,US,2025-01-15
-2,Bob,Martin,bob@example.com,GB,2025-02-03
-3,Carol,Schmidt,carol@example.com,DE,2025-02-20
-4,Daniel,Nguyen,daniel@example.com,VN,2025-03-05
-5,Eve,Tanaka,eve@example.com,JP,2025-03-18
-6,Frank,Dubois,frank@example.com,FR,2025-04-02

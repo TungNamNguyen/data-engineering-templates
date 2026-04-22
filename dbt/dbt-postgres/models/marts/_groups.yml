@@ -1,0 +1,19 @@
+version: 2
+
+# ── Model groups ──────────────────────────────────────────────────────────
+# Groups define ownership boundaries and access control for marts.
+# Models assigned to a group can restrict downstream access using
+# `access: private` or `access: protected` in their YAML config.
+#
+# See: https://docs.getdbt.com/docs/collaborate/govern/model-access
+
+groups:
+  - name: core
+    owner:
+      name: Core Data Team
+      email: data-team@company.com
+
+  - name: finance
+    owner:
+      name: Finance Engineering
+      email: finance-data@company.com

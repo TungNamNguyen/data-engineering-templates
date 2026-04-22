@@ -1,7 +1,11 @@
-code,name
+country_code,country_name
 US,United States
 GB,United Kingdom
 DE,Germany
 VN,Vietnam
 JP,Japan
 FR,France
+CA,Canada
+AU,Australia
+BR,Brazil
+IN,India

@@ -1,0 +1,57 @@
+version: 2
+
+sources:
+  - name: shopify
+    description: >
+      Shopify ecommerce platform — customers, orders, line items, and products.
+      Tables are landed by the ingestion pipeline into the raw schema.
+    schema: "{{ var('source_schema', 'raw') }}"
+    loader: replace_me  # change to: fivetran, airbyte, custom_elt, etc.
+
+    freshness:
+      warn_after:  {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+
+    tables:
+      - name: raw_customers
+        description: "One row per customer from the Shopify admin."
+        loaded_at_field: updated_at
+        columns:
+          - name: id
+            description: "Shopify customer identifier."
+            tests: [unique, not_null]
+          - name: email
+            tests: [not_null]
+
+      - name: raw_orders
+        description: "One row per order, header-level data only."
+        loaded_at_field: updated_at
+        columns:
+          - name: id
+            tests: [unique, not_null]
+          - name: customer_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('shopify', 'raw_customers')
+                  field: id
+
+      - name: raw_order_items
+        description: "One row per line item within an order."
+        loaded_at_field: _loaded_at
+        columns:
+          - name: id
+            tests: [unique, not_null]
+          - name: order_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('shopify', 'raw_orders')
+                  field: id
+
+      - name: raw_products
+        description: "Product catalogue from Shopify."
+        loaded_at_field: updated_at
+        columns:
+          - name: id
+            tests: [unique, not_null]

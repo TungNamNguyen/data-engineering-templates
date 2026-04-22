@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: stripe
+    description: >
+      Stripe payment processing — payment transactions linked to Shopify orders.
+    schema: "{{ var('source_schema', 'raw') }}"
+    loader: replace_me
+
+    freshness:
+      warn_after:  {count: 12, period: hour}
+      error_after: {count: 24, period: hour}
+
+    tables:
+      - name: raw_payments
+        description: "One row per payment attempt against an order."
+        loaded_at_field: created_at
+        columns:
+          - name: id
+            tests: [unique, not_null]
+          - name: order_id
+            tests: [not_null]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['pending', 'success', 'failed']
+          - name: payment_method
+            tests:
+              - accepted_values:
+                  values: ['credit_card', 'bank_transfer', 'paypal']
+
+

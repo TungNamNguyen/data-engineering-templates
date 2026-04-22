@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: stg_shopify__customers
+    description: "Cleaned customer records — renamed, cast, trimmed."
+    columns:
+      - name: customer_id
+        description: "PK — renamed from source `id`."
+        tests: [unique, not_null]
+      - name: email
+        tests: [not_null]
+      - name: country_code
+        tests:
+          - relationships:
+              to: ref('seed_country_codes')
+              field: country_code
+
+  - name: stg_shopify__orders
+    description: "Cleaned order headers — one row per order."
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_shopify__customers')
+              field: customer_id
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['placed', 'shipped', 'completed', 'returned']
+
+  - name: stg_shopify__order_items
+    description: "Cleaned line items — quantity and unit price in USD."
+    columns:
+      - name: order_item_id
+        tests: [unique, not_null]
+      - name: order_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+
+  - name: stg_shopify__products
+    description: "Cleaned product catalogue with price in USD."
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+      - name: product_name
+        tests: [not_null]

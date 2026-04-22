@@ -1,0 +1,33 @@
+version: 2
+
+exposures:
+  # ── Exposures ───────────────────────────────────────────────────────────
+  # Document downstream consumers so the DAG shows impact analysis.
+  # "If I change dim_customers, what dashboards break?"
+
+  - name: executive_revenue_dashboard
+    type: dashboard
+    maturity: high
+    url: https://bi.example.com/dashboards/revenue
+    description: >
+      Daily revenue and payment KPIs consumed by the executive team.
+    depends_on:
+      - ref('fct_orders')
+      - ref('fct_payments')
+      - ref('dim_customers')
+    owner:
+      name: Data Team
+      email: data-team@company.com
+
+  - name: product_performance_report
+    type: dashboard
+    maturity: medium
+    url: https://bi.example.com/dashboards/products
+    description: >
+      Product sales performance — units sold, revenue by category.
+    depends_on:
+      - ref('dim_products')
+      - ref('fct_order_items')
+    owner:
+      name: Product Analytics
+      email: product-analytics@company.com

@@ -2,8 +2,6 @@ name: 'dbt_postgres'
 version: '1.0.0'
 config-version: 2
 
-# Profile name — must match a key in ../profiles.yml (DBT_PROFILES_DIR points
-# at the monorepo root).
 profile: 'dbt_postgres'
 
 model-paths:    ["models"]
@@ -18,19 +16,43 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# Medallion layout. Schemas here are written literally — see
-# macros/generate_schema_name.sql, which overrides dbt's default of
-# concatenating target.schema + custom_schema_name.
+# ── Variables ─────────────────────────────────────────────────────────────
+vars:
+  source_schema: raw
+
+# ── Seeds ─────────────────────────────────────────────────────────────────
 seeds:
   dbt_postgres:
-    bronze:
-      +schema: bronze
+    +schema: raw
 
+# ── Models ────────────────────────────────────────────────────────────────
+# Three-layer architecture: staging → intermediate → marts.
+# Schema names are used verbatim — see macros/generate_schema_name.sql.
 models:
   dbt_postgres:
-    silver:
-      +schema: silver
+    staging:
+      +schema: staging
       +materialized: view
-    gold:
-      +schema: gold
+      +tags: ['staging']
+    intermediate:
+      +schema: intermediate
+      +materialized: ephemeral
+      +tags: ['intermediate']
+    marts:
+      +schema: marts
       +materialized: table
+      +tags: ['marts']
+      core:
+        +group: core
+      finance:
+        +group: finance
+
+# ── Snapshots ─────────────────────────────────────────────────────────────
+snapshots:
+  dbt_postgres:
+    +target_schema: snapshots
+
+# ── Tests ─────────────────────────────────────────────────────────────────
+tests:
+  dbt_postgres:
+    +severity: warn

@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: fct_payments
+    description: "Payment fact — one row per payment with order context."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: payment_id
+        data_type: integer
+        constraints: [{type: not_null}]
+        tests: [unique, not_null]
+      - name: order_id
+        data_type: integer
+        constraints: [{type: not_null}]
+        tests:
+          - relationships:
+              to: ref('fct_orders')
+              field: order_id
+      - name: customer_id
+        data_type: integer
+      - name: order_date
+        data_type: date
+      - name: amount_usd
+        data_type: numeric
+        constraints: [{type: not_null}]
+      - name: payment_method
+        data_type: text
+      - name: payment_status
+        data_type: text
+      - name: is_successful
+        data_type: boolean
+      - name: payment_date
+        data_type: date

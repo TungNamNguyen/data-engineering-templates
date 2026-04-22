@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: stg_stripe__payments
+    description: "Cleaned payment records — amount in USD, one row per payment."
+    columns:
+      - name: payment_id
+        tests: [unique, not_null]
+      - name: order_id
+        tests: [not_null]
+      - name: amount_usd
+        tests: [not_null]
+      - name: payment_method
+        tests: [not_null]
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['pending', 'success', 'failed']

@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: int_orders_enriched
+    description: >
+      Orders enriched with line-item totals and payment summaries.
+      Joins across Shopify (orders, line items) and Stripe (payments).
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests: [not_null]
+      - name: is_fully_paid
+        description: "True when total successful payments ≥ order total."
+
+  - name: int_customer_orders
+    description: >
+      Per-customer order aggregation — lifetime spend, order count, date range.
+      Consumed by dim_customers.
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]

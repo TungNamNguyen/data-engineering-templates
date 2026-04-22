@@ -11,6 +11,7 @@
 dbt_postgres:
   target: dev
   outputs:
+    # ── Development ─────────────────────────────────────────────────────
     dev:
       type: postgres
       host:     "{{ env_var('DBT_HOST', 'localhost') }}"
@@ -18,6 +19,34 @@ dbt_postgres:
       user:     "{{ env_var('DBT_USER') }}"
       password: "{{ env_var('DBT_PASSWORD') }}"
       dbname:   "{{ env_var('DBT_DATABASE', 'app') }}"
-      schema:   "{{ env_var('DBT_SCHEMA', 'bronze') }}"
+      schema:   "{{ env_var('DBT_SCHEMA', 'raw') }}"
+      threads:  4
+      sslmode:  "{{ env_var('DBT_SSLMODE', 'prefer') }}"
+
+    # ── Production ──────────────────────────────────────────────────────
+    # Activate with: dbt run --target prod
+    # Uses higher thread count for parallel model execution.
+    prod:
+      type: postgres
+      host:     "{{ env_var('DBT_HOST') }}"
+      port:     "{{ env_var('DBT_PORT', '5432') | as_number }}"
+      user:     "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname:   "{{ env_var('DBT_DATABASE', 'app') }}"
+      schema:   "{{ env_var('DBT_SCHEMA', 'raw') }}"
+      threads:  8
+      sslmode:  "{{ env_var('DBT_SSLMODE', 'require') }}"
+
+    # ── CI / Pull-Request ───────────────────────────────────────────────
+    # Each CI run writes to an isolated schema to avoid collisions.
+    # Schema name includes the pipeline ID for traceability.
+    ci:
+      type: postgres
+      host:     "{{ env_var('DBT_HOST', 'localhost') }}"
+      port:     "{{ env_var('DBT_PORT', '5432') | as_number }}"
+      user:     "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname:   "{{ env_var('DBT_DATABASE', 'app') }}"
+      schema:   "ci_{{ env_var('CI_PIPELINE_ID', 'local') }}"
       threads:  4
       sslmode:  "{{ env_var('DBT_SSLMODE', 'prefer') }}"

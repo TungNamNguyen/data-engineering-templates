@@ -20,5 +20,7 @@ dependencies = [
 dev = [
     "sqlfluff>=3.2,<4.0",
     "sqlfluff-templater-dbt>=3.2,<4.0",
-    "pre-commit>=4.0,<5.0",
 ]
+
+[tool.uv]
+python = "3.12"

@@ -1,0 +1,14 @@
+version: 2
+
+seeds:
+  - name: seed_country_codes
+    description: >
+      Static ISO country-code → name lookup. Seeds are version-controlled CSVs
+      loaded with `dbt seed`. Use seeds only for small, rarely-changing reference
+      data — never for large or frequently-updated datasets.
+    columns:
+      - name: country_code
+        description: "ISO 3166-1 alpha-2 country code."
+        tests: [unique, not_null]
+      - name: country_name
+        tests: [not_null]
