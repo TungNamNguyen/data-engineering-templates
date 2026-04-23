@@ -1,12 +1,8 @@
-# dbt connection profile — shared by every dbt project in this monorepo.
+# Shared dbt profile for every project in this monorepo.
 #
-# The Makefile exports DBT_PROFILES_DIR to the monorepo root so any project
-# under dbt-postgres/, dbt-duckdb/, etc. finds this file automatically. For
-# ad-hoc commands from a project subfolder, pass --profiles-dir .. .
-#
-# All credentials come from the environment — copy .env.example to .env and
-# `set -a; source .env; set +a` before running dbt, or inject via your shell
-# / orchestrator of choice.
+# Credentials come from environment variables — copy .env.example to .env and
+# `set -a; source .env; set +a` before running dbt. From a project subfolder,
+# pass --profiles-dir ..
 
 dbt_postgres:
   target: dev
