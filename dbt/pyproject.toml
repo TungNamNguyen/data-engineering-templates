@@ -22,5 +22,3 @@ dev = [
     "sqlfluff-templater-dbt>=3.2,<4.0",
 ]
 
-[tool.uv]
-python = "3.12"

@@ -8,11 +8,13 @@ with source as (
 )
 
 select
-    id                                          as order_item_id,
+    id                                               as order_item_id,
     order_id,
     product_id,
     quantity,
     unit_price_cents,
-    {{ cents_to_dollars('unit_price_cents') }}   as unit_price_usd,
-    quantity * {{ cents_to_dollars('unit_price_cents') }} as line_total_usd
+    {{ cents_to_dollars('unit_price_cents') }}        as unit_price_usd,
+    -- Multiply in cents first, then convert — avoids compounding rounding
+    -- errors on unit prices that don't divide cleanly into cents.
+    {{ cents_to_dollars('quantity * unit_price_cents') }} as line_total_usd
 from source

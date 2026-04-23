@@ -11,12 +11,12 @@ models:
         data_type: integer
         constraints: [{type: not_null}]
         tests: [unique, not_null]
+      # first_name / last_name may be null — Shopify allows guest checkouts
+      # and business accounts without a personal name on file.
       - name: first_name
         data_type: text
-        constraints: [{type: not_null}]
       - name: last_name
         data_type: text
-        constraints: [{type: not_null}]
       - name: full_name
         data_type: text
       - name: email

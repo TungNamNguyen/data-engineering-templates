@@ -28,6 +28,8 @@ seeds:
 # ── Models ────────────────────────────────────────────────────────────────
 # Three-layer architecture: staging → intermediate → marts.
 # Schema names are used verbatim — see macros/generate_schema_name.sql.
+# Intermediate uses `view` (not ephemeral) so it's queryable for debugging
+# and observable in the warehouse — the production-grade default.
 models:
   dbt_postgres:
     staging:
@@ -36,7 +38,7 @@ models:
       +tags: ['staging']
     intermediate:
       +schema: intermediate
-      +materialized: ephemeral
+      +materialized: view
       +tags: ['intermediate']
     marts:
       +schema: marts
@@ -51,8 +53,3 @@ models:
 snapshots:
   dbt_postgres:
     +target_schema: snapshots
-
-# ── Tests ─────────────────────────────────────────────────────────────────
-tests:
-  dbt_postgres:
-    +severity: warn
