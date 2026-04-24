@@ -1,12 +1,1 @@
--- 03-governance.sql — no-op for DuckDB.
---
--- DuckDB has no user, role, or grant system. It is a single-user
--- embedded engine: whoever can open the .duckdb file has full
--- privileges on everything inside it. Access control is therefore
--- delegated to the host filesystem — file ownership and permissions
--- on ./data/*.duckdb are the only gate.
---
--- The `transform_user` / `read_user` split that the other templates in
--- this repo implement here is not expressible in DuckDB. This file
--- exists only to keep the initdb.d layout identical across every
--- template.
+-- No-op — DuckDB has no user/role/grant system (access is filesystem-level). See README.

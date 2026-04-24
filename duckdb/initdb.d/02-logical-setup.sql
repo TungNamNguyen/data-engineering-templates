@@ -1,10 +1,4 @@
--- 02-logical-setup.sql — creates the medallion schema layers.
---
--- DuckDB has first-class schema support (like Postgres), so the
--- bronze / silver / gold layers live as real schemas inside the single
--- .duckdb file, not as separate databases.
---
--- Idempotent — re-runs harmlessly on every `docker compose up -d`.
+-- Creates the bronze/silver/gold schemas inside the DuckDB file.
 
 CREATE SCHEMA IF NOT EXISTS bronze;
 CREATE SCHEMA IF NOT EXISTS silver;
