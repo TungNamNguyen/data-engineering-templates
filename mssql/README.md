@@ -137,9 +137,9 @@ Every template in this repo follows the same three-file layout:
 
 | File | Purpose |
 |---|---|
-| [`01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Creates `MSSQL_DATABASE`, the legacy `MSSQL_USER` login (with `db_owner`), and the data-engineering logins (`transform_user`, `read_user`). Passwords come from env vars and are escaped before being embedded in T-SQL. |
-| [`02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | Creates the `bronze`, `silver`, `gold` schemas inside `MSSQL_DATABASE`, owned by `transform_user`. |
-| [`03-governance.sql`](initdb.d/03-governance.sql) | Grants `read_user` SELECT on each schema. `transform_user` already owns the schemas, so no explicit grant is needed. |
+| [`01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Creates `MSSQL_DATABASE`, the legacy `MSSQL_USER` login (with `db_owner`), and the data-engineering logins (`transform_user`, `read_user`). Also grants `transform_user` the database-scoped `CREATE TABLE / VIEW / PROCEDURE / FUNCTION` rights — see "Permission model" below. |
+| [`02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | Creates the `bronze`, `silver`, `gold` schemas inside `MSSQL_DATABASE`, owned by `transform_user`. Uses `EXEC('CREATE SCHEMA …')` because T-SQL requires `CREATE SCHEMA` to be the first statement in a batch. |
+| [`03-governance.sql`](initdb.d/03-governance.sql) | Grants `read_user` SELECT on each schema. `transform_user` already owns the schemas, so no explicit grant is needed. `GRANT SELECT ON SCHEMA::` covers existing **and** future tables — no default-privileges mechanism required. |
 
 ### Accounts and layers
 
@@ -153,6 +153,10 @@ Every template in this repo follows the same three-file layout:
 The medallion layers (**bronze** raw, **silver** cleaned, **gold** curated) live as *schemas* inside `${MSSQL_DATABASE}` — SQL Server has a real schema layer, just like Postgres.
 
 Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the first `docker compose up -d`. Avoid single quotes in the values.
+
+### Permission model
+
+SQL Server splits create permissions by scope: schema ownership (via `AUTHORIZATION` in `02-logical-setup.sql`) controls **where** objects land, but the `CREATE TABLE / VIEW / PROCEDURE / FUNCTION` grants in `01-infra-setup.sh` are what actually let `transform_user` create them. Owning a schema is necessary but not sufficient — both pieces are required. This is different from Postgres, where schema ownership alone implies full DDL.
 
 > **Write idempotent SQL.** Unlike postgres/mysql — which only run init scripts against an empty data directory — the `mssql-init` sidecar runs every time you `docker compose up -d`. Use `IF NOT EXISTS` / `IF ... IS NULL` guards so re-runs are no-ops. The included scripts already do.
 
