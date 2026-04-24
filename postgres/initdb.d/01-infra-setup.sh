@@ -1,14 +1,5 @@
 #!/bin/bash
-# 01-infra-setup.sh — creates the data-engineering service accounts.
-#
-# Runs on first startup only (empty data volume). Passwords are read from
-# environment variables set in .env and injected via psql's variable binding
-# (the :'var' syntax safely quotes and escapes the value), so secrets never
-# appear on the command line or in logs.
-#
-# Users created:
-#   transform_user  — owns the bronze/silver/gold schemas (created in 02)
-#   read_user       — read-only access (granted in 03)
+# Creates the data-engineering service accounts (transform_user, read_user).
 
 set -euo pipefail
 
