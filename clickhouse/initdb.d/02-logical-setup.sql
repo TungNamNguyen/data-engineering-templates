@@ -1,8 +1,1 @@
--- 02-logical-setup.sql — no-op for ClickHouse.
---
--- ClickHouse has no schema layer between database and table — "SCHEMA" is
--- a synonym for "DATABASE". The bronze/silver/gold layers are therefore
--- created as databases in 01-infra-setup.sh, not as schemas here.
---
--- This file exists only to keep the initdb.d layout identical across every
--- template in this repo (Postgres and MSSQL use it to create real schemas).
+-- No-op for ClickHouse — layers are databases, created in 01-infra-setup.sh. See README.

@@ -1,11 +1,4 @@
--- 03-governance.sql — grants privileges to the service accounts.
---
--- transform_user: full privileges on bronze/silver/gold (can CREATE,
---                 ALTER, DROP, INSERT, SELECT — the works).
--- read_user:      SELECT only on all three layers.
---
--- ClickHouse's `db.*` grant covers existing AND future tables in that
--- database, so no additional mechanism is needed for newly created tables.
+-- Grants transform_user ALL and read_user SELECT on bronze/silver/gold.
 
 GRANT ALL ON bronze.* TO transform_user;
 GRANT ALL ON silver.* TO transform_user;
