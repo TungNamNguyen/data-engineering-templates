@@ -1,9 +1,1 @@
--- 02-logical-setup.sql — no-op for Apache Doris.
---
--- Doris follows the MySQL model — there is no schema layer between
--- database and table. The bronze/silver/gold layers are therefore
--- created as databases in 01-infra-setup.sh, not as schemas here.
---
--- This file exists only to keep the initdb.d layout identical across
--- every template in this repo (Postgres and MSSQL use it to create real
--- schemas).
+-- No-op for Doris — layers are databases, created in 01-infra-setup.sh. See README.
