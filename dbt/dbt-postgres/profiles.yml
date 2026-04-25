@@ -1,8 +1,8 @@
-# Shared dbt profile for every project in this monorepo.
+# dbt profile for the dbt-postgres project.
 #
 # Credentials come from environment variables — copy .env.example to .env and
-# `set -a; source .env; set +a` before running dbt. From a project subfolder,
-# pass --profiles-dir ..
+# `set -a; source .env; set +a` before running dbt. dbt auto-discovers this
+# file when run from the project directory.
 
 dbt_postgres:
   target: dev

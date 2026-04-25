@@ -4,9 +4,9 @@
 [![Dependency Management](https://img.shields.io/badge/managed_by-uv-purple.svg?style=flat)](https://github.com/astral-sh/uv)
 [![Code Style](https://img.shields.io/badge/sqlfluff-linted-green.svg)](https://docs.sqlfluff.com/)
 
-A true **production-grade monorepo template** for dbt. It features a blazing-fast Python environment managed by `uv`, unified tooling (`sqlfluff`), and a shared `profiles.yml` supporting multi-environment deployments.
+A **production-grade dbt template**. It features a blazing-fast Python environment managed by `uv`, unified tooling (`sqlfluff`), and a self-contained `dbt-postgres/` project with `profiles.yml` supporting multi-environment deployments.
 
-The included project `dbt-postgres/` acts as a reference implementation, demonstrating the industry-standard **staging → intermediate → marts** layered architecture with a realistic multi-source ecommerce domain (Shopify + Stripe).
+`dbt-postgres/` is the reference implementation — kept self-contained so it can be copied as-is into a new repo — demonstrating the industry-standard **staging → intermediate → marts** layered architecture with a realistic multi-source ecommerce domain (Shopify + Stripe).
 
 ---
 
@@ -56,17 +56,17 @@ Shopify (4 tables)           Stripe (1 table)
 ## Project Layout
 
 ```text
-dbt/                             ← Monorepo Root
+dbt/                             ← Template Root
 ├── pyproject.toml               # Python dependencies (dbt, sqlfluff)
 ├── uv.lock                      # Deterministic dependency lockfile
-├── profiles.yml                 # Shared dev/prod/ci targets for all projects
-├── .env.example                 # Template for database credentials
 ├── .gitignore
 │
-└── dbt-postgres/                ← The dbt Project
+└── dbt-postgres/                ← The dbt Project (self-contained)
     ├── dbt_project.yml
+    ├── profiles.yml             # dev/prod/ci targets
+    ├── .env.example             # Template for database credentials
     ├── packages.yml             # dbt_utils + dbt_expectations
-    ├── .sqlfluff                # Unified linting rules
+    ├── .sqlfluff                # Linting rules
     │
     ├── models/
     │   ├── staging/             # Grouped by source system
@@ -150,6 +150,8 @@ This reads `pyproject.toml`, resolves everything against the committed `uv.lock`
 ### 3. Configure database credentials
 
 ```bash
+cd dbt-postgres
+
 # 1. Create your local env file from the template
 cp .env.example .env
 
@@ -160,22 +162,22 @@ $EDITOR .env
 set -a; source .env; set +a
 ```
 
-The root `profiles.yml` reads these env vars — there's no separate per-project profile to maintain.
+`profiles.yml` reads these env vars — dbt auto-discovers it when run from the project directory.
 
 ### 4. Install dbt packages & verify the connection
 
 ```bash
 # Install packages.yml dependencies (dbt_utils, dbt_expectations)
-uv run dbt deps --project-dir dbt-postgres --profiles-dir .
+uv run dbt deps
 
 # Test the warehouse connection
-uv run dbt debug --project-dir dbt-postgres --profiles-dir .
+uv run dbt debug
 ```
 
 ### 5. Build the warehouse
 
 ```bash
-uv run dbt build --project-dir dbt-postgres --profiles-dir .
+uv run dbt build
 ```
 
 This runs seeds → snapshots → models → tests in dependency order.
@@ -183,8 +185,8 @@ This runs seeds → snapshots → models → tests in dependency order.
 ### 6. Explore the lineage
 
 ```bash
-uv run dbt docs generate --project-dir dbt-postgres --profiles-dir .
-uv run dbt docs serve  --project-dir dbt-postgres --profiles-dir .
+uv run dbt docs generate
+uv run dbt docs serve
 ```
 
 Navigates to `http://localhost:8080`.
@@ -193,16 +195,11 @@ Navigates to `http://localhost:8080`.
 
 ## Command Reference
 
-All commands run from the monorepo root. Set `DBT_PROFILES_DIR=.` once per shell to skip `--profiles-dir`:
-
-```bash
-export DBT_PROFILES_DIR=$PWD
-cd dbt-postgres   # or keep --project-dir on every call
-```
+Run `uv sync` from the `dbt/` root to install Python deps, then `cd dbt-postgres` for everything else:
 
 | Task | Command |
 |:---|:---|
-| Install deps | `uv sync` |
+| Install deps (from `dbt/`) | `uv sync` |
 | dbt packages | `uv run dbt deps` |
 | Load seeds | `uv run dbt seed` |
 | Run models | `uv run dbt run` |
@@ -211,8 +208,8 @@ cd dbt-postgres   # or keep --project-dir on every call
 | Unit tests only | `uv run dbt test --select "test_type:unit"` |
 | Source freshness | `uv run dbt source freshness` |
 | Generate + serve docs | `uv run dbt docs generate && uv run dbt docs serve` |
-| Lint SQL | `uv run sqlfluff lint dbt-postgres` |
-| Auto-format SQL | `uv run sqlfluff fix dbt-postgres` |
+| Lint SQL | `uv run sqlfluff lint .` |
+| Auto-format SQL | `uv run sqlfluff fix .` |
 | Clean build artifacts | `uv run dbt clean` |
 | Slim CI (modified + downstream) | `uv run dbt build --select "state:modified+" --defer --state ./prod-manifest` |
 
@@ -238,12 +235,12 @@ Select a non-default target with `--target prod` or `--target ci`.
 
 If you are cloning this repository to build your own warehouse:
 
-1. Copy the entire `dbt/` directory to your new codebase.
+1. Copy `dbt-postgres/` (and the surrounding `pyproject.toml` / `uv.lock` if you want the same Python env) into your new codebase.
 2. Rename `dbt-postgres/` to match your actual project name.
 3. Update `dbt_project.yml`: change `name` and update the `profile` key.
-4. Add your new profile mapping in `profiles.yml`.
+4. Update the matching profile name in `profiles.yml`.
 5. Inside `models/staging`, delete `shopify/` and `stripe/` and replace them with your actual source systems following the naming conventions above.
-6. Run `uv run dbt build --project-dir <your-project> --profiles-dir .` to verify.
+6. Run `uv run dbt build` from inside the project directory to verify.
 
 ---
 
