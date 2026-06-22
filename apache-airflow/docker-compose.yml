@@ -227,8 +227,8 @@ services:
           echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
           echo
         fi
-        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/src
-        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins,src}
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/src /sources/config
+        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins,src,config}
         exec /entrypoint airflow version
     environment:
       <<: *airflow-common-env
