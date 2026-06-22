@@ -11,7 +11,6 @@ A collection of production-ready Docker Compose templates and configurations for
 | [Apache Superset](apache-superset/) | BI tool for exploring data and building dashboards | 4.1.1 | Ready |
 | [ClickHouse](clickhouse/) | Columnar database for real-time analytics | 24.8 | Ready |
 | [dbt](dbt/) | SQL transformation tool — turn raw tables into clean, tested models | 1.9 | Ready |
-| [DuckDB](duckdb/) | In-process analytical database, like SQLite for analytics | 1.2.2 | Ready |
 | [MinIO](minio/) | S3-compatible object storage | latest | Ready |
 | [Microsoft SQL Server](mssql/) | Microsoft's enterprise relational database | 2022 | Ready |
 | [MySQL](mysql/) | The world's most popular open-source relational database | 8.4 LTS | Ready |
