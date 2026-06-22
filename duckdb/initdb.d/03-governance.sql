@@ -1,1 +1,0 @@
--- No-op — DuckDB has no user/role/grant system (access is filesystem-level). See README.
