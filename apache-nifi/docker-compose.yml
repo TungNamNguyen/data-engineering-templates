@@ -1,0 +1,85 @@
+
+
+services:
+  nifi:
+    image: ${NIFI_IMAGE}
+    container_name: nifi
+    hostname: nifi
+    environment:
+      NIFI_WEB_HTTPS_PORT: 8443
+      NIFI_WEB_PROXY_HOST: ${NIFI_WEB_PROXY_HOST}
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
+      NIFI_SENSITIVE_PROPS_KEY: ${NIFI_SENSITIVE_PROPS_KEY}
+      NIFI_JVM_HEAP_INIT: ${NIFI_JVM_HEAP_INIT}
+      NIFI_JVM_HEAP_MAX: ${NIFI_JVM_HEAP_MAX}
+    ports:
+      - "${NIFI_HTTPS_PORT}:8443"
+    volumes:
+      - nifi-conf:/opt/nifi/nifi-current/conf
+      - nifi-state:/opt/nifi/nifi-current/state
+      - nifi-logs:/opt/nifi/nifi-current/logs
+      - nifi-database:/opt/nifi/nifi-current/database_repository
+      - nifi-flowfile:/opt/nifi/nifi-current/flowfile_repository
+      - nifi-content:/opt/nifi/nifi-current/content_repository
+      - nifi-provenance:/opt/nifi/nifi-current/provenance_repository
+      - ./drivers:/opt/nifi/drivers
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS https://nifi:8443/nifi/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 8G
+    #     reservations:
+    #       cpus: '2'
+    #       memory: 4G
+
+  registry-init:
+    image: ${NIFI_REGISTRY_IMAGE}
+    container_name: nifi-registry-init
+    user: root
+    entrypoint:
+      - sh
+      - -c
+      - chown -R 1000:1000 /opt/nifi-registry/nifi-registry-current/database /opt/nifi-registry/nifi-registry-current/flow_storage
+    volumes:
+      - registry-database:/opt/nifi-registry/nifi-registry-current/database
+      - registry-flow-storage:/opt/nifi-registry/nifi-registry-current/flow_storage
+    restart: "no"
+
+  nifi-registry:
+    image: ${NIFI_REGISTRY_IMAGE}
+    container_name: nifi-registry
+    hostname: nifi-registry
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    ports:
+      - "${NIFI_REGISTRY_PORT}:18080"
+    volumes:
+      - registry-database:/opt/nifi-registry/nifi-registry-current/database
+      - registry-flow-storage:/opt/nifi-registry/nifi-registry-current/flow_storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://nifi-registry:18080/nifi-registry/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  nifi-conf:
+  nifi-state:
+  nifi-logs:
+  nifi-database:
+  nifi-flowfile:
+  nifi-content:
+  nifi-provenance:
+  registry-database:
+  registry-flow-storage:
