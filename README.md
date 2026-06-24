@@ -8,6 +8,7 @@ A collection of production-ready Docker Compose templates and configurations for
 |------|-------------|---------|--------|
 | [Apache Airflow](apache-airflow/) | Workflow orchestration for data pipelines | 3.1.8 | Ready |
 | [Apache Doris](apache-doris/) | Real-time analytical database, MySQL-compatible | 3.0.3 | Ready |
+| [Apache NiFi](apache-nifi/) | Drag-and-drop tool for moving and transforming data between systems | 2.10 | Ready |
 | [Apache Superset](apache-superset/) | BI tool for exploring data and building dashboards | 4.1.1 | Ready |
 | [ClickHouse](clickhouse/) | Columnar database for real-time analytics | 24.8 | Ready |
 | [dbt](dbt/) | SQL transformation tool — turn raw tables into clean, tested models | 1.9 | Ready |
