@@ -1,12 +1,11 @@
-# Apache Doris local development setup.
-#
-# Default: 1 FE + 1 BE — minimal and lightweight for local dev.
+# Apache Doris — lightweight, production-ready single-node setup (1 FE + 1 BE).
 #
 # Usage:
+#   cp .env.example .env
 #   docker compose up -d
 #
-# Connect via MySQL client:
-#   mysql -h 127.0.0.1 -P 9030 -u root -p
+# Connect via MySQL client (root has no password until you set one — see README):
+#   mysql -h 127.0.0.1 -P 9030 -u root
 #
 # Web UI (no auth):
 #   http://localhost:8030
@@ -33,7 +32,6 @@ services:
     environment:
       FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
       FE_ID: 1
-      DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
     ports:
       - "${FE_QUERY_PORT:-9030}:9030"
       - "${FE_HTTP_PORT:-8030}:8030"
@@ -72,7 +70,6 @@ services:
   #   environment:
   #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
   #     FE_ID: 2
-  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
   #   volumes:
   #     - doris-fe-2-meta:/opt/apache-doris/fe/doris-meta
   #     - doris-fe-2-log:/opt/apache-doris/fe/log
@@ -106,7 +103,6 @@ services:
   #   environment:
   #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
   #     FE_ID: 3
-  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
   #   volumes:
   #     - doris-fe-3-meta:/opt/apache-doris/fe/doris-meta
   #     - doris-fe-3-log:/opt/apache-doris/fe/log
@@ -140,8 +136,7 @@ services:
     # Bypass swap check — Doris BE's start_be.sh hardcodes a swap check
     # that exits if the host has swap enabled, with no config flag to
     # disable it. The fake `swapon` shim reports no swap and makes the
-    # check pass. Root-password setup and initdb.d execution are handled
-    # by the doris-init sidecar below, not here.
+    # check pass.
     entrypoint:
       - bash
       - -c
@@ -188,66 +183,6 @@ services:
     #       cpus: '4'
     #       memory: 8G
 
-  # One-shot initializer. Waits for FE + BE, then dispatches every *.sh
-  # and *.sql in ./initdb.d in alphabetical order via the mysql client.
-  # Runs the full 01-infra-setup.sh -> 02-logical-setup.sql ->
-  # 03-governance.sql pipeline: set root password, create databases,
-  # create service accounts, grant privileges.
-  doris-init:
-    image: mysql:8.4
-    container_name: doris-init
-    depends_on:
-      doris-fe:
-        condition: service_healthy
-      doris-be:
-        condition: service_healthy
-    environment:
-      DORIS_FE_HOST: 10.10.80.2
-      DORIS_FE_PORT: 9030
-      DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
-      TRANSFORM_USER_PASSWORD: ${TRANSFORM_USER_PASSWORD}
-      READ_USER_PASSWORD: ${READ_USER_PASSWORD}
-    volumes:
-      - ./initdb.d:/initdb.d:ro
-    networks:
-      - doris-net
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        set -euo pipefail
-        echo "[doris-init] waiting for FE query port to accept connections..."
-        for i in $$(seq 1 60); do
-          if mysql -h "$$DORIS_FE_HOST" -P "$$DORIS_FE_PORT" -u root -e "SELECT 1" >/dev/null 2>&1; then
-            echo "[doris-init] FE ready"
-            break
-          fi
-          sleep 5
-        done
-
-        # After 01-infra-setup.sh runs, subsequent .sql files need to
-        # authenticate with the (possibly newly-set) root password.
-        _MYSQL_OPTS=(-h "$$DORIS_FE_HOST" -P "$$DORIS_FE_PORT" -u root)
-        if [ -n "$${DORIS_ROOT_PASSWORD:-}" ]; then
-          _MYSQL_OPTS+=(-p"$$DORIS_ROOT_PASSWORD")
-        fi
-
-        shopt -s nullglob
-        for f in /initdb.d/*; do
-          case "$$f" in
-            *.sh)
-              echo "[doris-init] running $$f"
-              bash "$$f"
-              ;;
-            *.sql)
-              echo "[doris-init] running $$f"
-              mysql "$${_MYSQL_OPTS[@]}" < "$$f"
-              ;;
-          esac
-        done
-        echo "[doris-init] done"
-    restart: "no"
-
   # doris-be-2:
   #   image: ${BE_IMAGE}
   #   container_name: doris-be-2
@@ -256,7 +191,6 @@ services:
   #   environment:
   #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
   #     BE_ADDR: "10.10.80.4:${BE_HEARTBEAT_PORT:-9050}"
-  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
   #   volumes:
   #     - doris-be-2-storage:/opt/apache-doris/be/storage
   #     - doris-be-2-log:/opt/apache-doris/be/log
@@ -294,7 +228,6 @@ services:
   #   environment:
   #     FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
   #     BE_ADDR: "10.10.80.5:${BE_HEARTBEAT_PORT:-9050}"
-  #     DORIS_ROOT_PASSWORD: ${DORIS_ROOT_PASSWORD:-}
   #   volumes:
   #     - doris-be-3-storage:/opt/apache-doris/be/storage
   #     - doris-be-3-log:/opt/apache-doris/be/log

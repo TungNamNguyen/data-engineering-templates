@@ -2,7 +2,7 @@
 
 Apache Doris is a high-performance, real-time analytical database. It uses a MySQL-compatible protocol, so you can connect with any MySQL client, JDBC driver, or BI tool.
 
-This setup runs **1 FE + 1 BE** for lightweight local development, with a commented production-ready configuration (3 FE + 3 BE) built into the same files.
+This is a **lightweight, single-node** setup (1 FE + 1 BE) with production-ready container settings (persistent volumes, healthchecks, restart policy, tuned `fe.conf`/`be.conf`), and a commented 3 FE + 3 BE layout built into the same files for when you need HA. There is no init-script mechanism — databases, users, and tables are yours to create (see [First-time setup](#first-time-setup)).
 
 ## Architecture
 
@@ -75,13 +75,13 @@ If you don't have `mysql` installed locally, use the one inside the FE container
 docker exec -it doris-fe mysql -h 127.0.0.1 -P 9030 -u root -p
 ```
 
-> Enter the password set in `.env` (`DORIS_ROOT_PASSWORD`).
+> A fresh cluster has **no root password** — press Enter at the prompt (or drop `-p`). Set one right away; see [First-time setup](#first-time-setup).
 
 ### Web UI
 
 Open [http://localhost:8030](http://localhost:8030) in your browser.
 
-> **Note:** The Web UI (port 8030) does **not** enforce authentication — this is by design in Doris. It's an internal admin interface for monitoring cluster status, query profiles, and metadata. The `DORIS_ROOT_PASSWORD` only applies to the MySQL protocol (port 9030). This is fine for local dev since the port is only on localhost. In production, restrict access via firewall or reverse proxy.
+> **Note:** The Web UI (port 8030) does **not** enforce authentication — this is by design in Doris. It's an internal admin interface for monitoring cluster status, query profiles, and metadata. The root password only applies to the MySQL protocol (port 9030). This is fine for local dev since the port is only on localhost. In production, restrict access via firewall or reverse proxy.
 
 ### DBeaver
 
@@ -93,7 +93,7 @@ Open [http://localhost:8030](http://localhost:8030) in your browser.
    - **Port:** `9030`
    - **Database:** *(leave empty or enter a database name)*
    - **Username:** `root`
-   - **Password:** value of `DORIS_ROOT_PASSWORD` from `.env`
+   - **Password:** the root password you set in [First-time setup](#first-time-setup)
 3. Click **Driver properties** tab and set:
    - `allowPublicKeyRetrieval` = `true` — Doris doesn't send a public key during handshake like MySQL does; without this the driver refuses to send credentials
    - `useSSL` = `false` — Doris does not support SSL/TLS connections; the driver will fail the handshake if it tries to negotiate SSL
@@ -110,7 +110,7 @@ Open [http://localhost:8030](http://localhost:8030) in your browser.
    - **JDBC URL:** `jdbc:mysql://127.0.0.1:9030/`
    - **Driver class:** `com.mysql.jdbc.Driver`
    - **Username:** `root`
-   - **Password:** value of `DORIS_ROOT_PASSWORD` from `.env`
+   - **Password:** the root password you set in [First-time setup](#first-time-setup)
 3. Click **Test Connection**, then **Finish**
 
 ### JDBC (Python, Java, etc.)
@@ -126,16 +126,12 @@ Any MySQL-compatible driver works: PyMySQL, mysql-connector-python, JDBC, etc.
 ```
 apache-doris/
 ├── docker-compose.yml   # Service definitions (1 FE + 1 BE active, 3+3 commented)
-├── .env                 # Environment variables (ports, image tags, password)
+├── .env                 # Environment variables (ports, image tags)
 ├── .env.example         # Template for .env
 ├── .gitignore           # Ignores .env
 ├── conf/
 │   ├── fe.conf          # FE configuration (JVM, connections, metadata)
 │   └── be.conf          # BE configuration (JVM, memory, compaction, buffer)
-├── initdb.d/
-│   ├── 01-infra-setup.sh        # Root password + bronze/silver/gold dbs + service accounts
-│   ├── 02-logical-setup.sql     # No-op for Doris (no schema layer)
-│   └── 03-governance.sql        # Grants for transform_user / read_user
 └── README.md            # This file
 ```
 
@@ -150,7 +146,8 @@ apache-doris/
 | `FE_EDIT_LOG_PORT` | `9010` | FE inter-node replication port |
 | `BE_HEARTBEAT_PORT` | `9050` | BE heartbeat port |
 | `BE_WEBSERVER_PORT` | `8040` | BE HTTP status port |
-| `DORIS_ROOT_PASSWORD` | *(empty)* | Root password. Set for production. |
+
+> There is no root-password variable. The image's `DORIS_ROOT_PASSWORD` hook is unreliable, so the password is set once by hand after first startup — see [First-time setup](#first-time-setup).
 
 ### Changing the Doris version
 
@@ -215,64 +212,48 @@ SHOW BACKEND CONFIG LIKE "%key%";
 | `sys_log_roll_mode` | 512 MB | 1 GB | Max size per log file |
 | `sys_log_roll_num` | 5 | 10 | Number of log files to retain |
 
-## Init scripts (initdb.d/)
+## First-time setup
 
-Unlike postgres/mysql/clickhouse, the Doris image has no reliable built-in `initdb.d` mechanism, so the `doris-init` sidecar in [docker-compose.yml](docker-compose.yml) plays that role. It waits for both FE and BE to become healthy, then dispatches every `*.sh` and `*.sql` file in `./initdb.d` in alphabetical order via the `mysql` client against the FE query port.
+Unlike postgres/mysql/clickhouse, this template ships **no `initdb.d/` mechanism** — the Doris image has none built in, and a sidecar that re-runs on every `up` adds more moving parts than it saves. Bootstrap the cluster once by hand after it is healthy. Everything below is persisted in the `doris-fe-meta` volume and survives restarts.
 
-Every template in this repo follows the same three-file layout:
+### 1. Set the root password
 
-| File | Purpose |
-|---|---|
-| [`initdb.d/01-infra-setup.sh`](initdb.d/01-infra-setup.sh) | Sets the Doris root password from `DORIS_ROOT_PASSWORD`, creates the `bronze`, `silver`, `gold` databases, and creates the data-engineering service accounts. |
-| [`initdb.d/02-logical-setup.sql`](initdb.d/02-logical-setup.sql) | No-op for Doris — it follows the MySQL model with no schema layer between database and table, so the layers *are* databases. Kept for layout consistency with Postgres/MSSQL. |
-| [`initdb.d/03-governance.sql`](initdb.d/03-governance.sql) | Grants `transform_user` full privileges and `read_user` SELECT on all three layers. |
-
-### Accounts and layers
-
-| Account | Privileges | Notes |
-|---|---|---|
-| `root` | Superuser | Password from `DORIS_ROOT_PASSWORD` (set by `01-infra-setup.sh`) |
-| `transform_user` | `ALL` on `bronze.*`, `silver.*`, `gold.*` | Full DDL + DML on all three layers |
-| `read_user` | `SELECT_PRIV` on `bronze.*`, `silver.*`, `gold.*` | Read-only; covers existing + future tables |
-
-The medallion layers (**bronze** raw, **silver** cleaned, **gold** curated) live as standalone databases. Doris does not have a schema layer between database and table — unlike Postgres/MSSQL, which nest the layers as schemas under one database.
-
-Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the first `docker compose up -d`. Avoid single quotes in the values.
-
-### When init scripts run
-
-> **Write idempotent SQL.** Unlike postgres/mysql/clickhouse — whose entrypoints only run init scripts against an empty data directory — the `doris-init` sidecar runs every time you `docker compose up -d`. Use `IF NOT EXISTS` guards so re-runs are no-ops. The included scripts already do.
-
-Like mssql, **Doris is an outlier** — the Doris image has no built-in `initdb.d` mechanism, so a sidecar (`doris-init`, `restart: "no"`) plays that role. Compose starts an exited one-shot container again on every `up` or `restart`, and `down` removes it entirely so the next `up` recreates it. That means **editing a script and running `docker compose up -d` *does* re-apply the change** — provided the script is idempotent (the bundled ones are).
-
-| Action | Cluster state | Init runs? |
-|---|---|---|
-| First `docker compose up -d` | empty | **yes** |
-| `docker compose restart` | populated | **yes** — `restart` also restarts exited containers |
-| `docker compose up -d` again (no `down`) | populated | **yes** — compose restarts the exited sidecar; idempotent guards matter |
-| `docker compose down` then `up -d` | populated | **yes** — sidecar is recreated and runs again |
-| `docker compose down -v` then `up -d` | wiped → empty | **yes** |
-| Editing a file in `initdb.d/`, then `up -d` | populated | **yes** — the new content is applied on the next `up` |
-
-Treat `initdb.d/` as **bootstrap, not migrations**. The every-`up` re-run is a convenience for iterating on the bootstrap itself, not a substitute for a real migration tool once the project is live.
-
-To re-run the sidecar on demand without restarting FE/BE:
+A fresh cluster starts with a passwordless `root`. Set one before exposing port 9030 beyond localhost:
 
 ```bash
-docker compose up -d --force-recreate doris-init
+docker exec -it doris-fe mysql -h 127.0.0.1 -P 9030 -u root
 ```
 
-To apply a single SQL file by hand:
+```sql
+SET PASSWORD FOR 'root' = PASSWORD('your-strong-password');
+```
+
+> Connections from **inside** the FE container bypass authentication, so `docker exec ... mysql` keeps working without `-p` — this is normal Doris behavior. The password is enforced for every external client (DBeaver, JDBC, BI tools).
+
+### 2. Create databases and a service account
+
+Doris follows the MySQL model — there is no schema layer between database and table. Adjust names and privileges to your project:
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+
+CREATE USER IF NOT EXISTS 'app_user' IDENTIFIED BY 'app-password';
+GRANT SELECT_PRIV, LOAD_PRIV, ALTER_PRIV, CREATE_PRIV, DROP_PRIV ON analytics.* TO 'app_user';
+
+-- Read-only account for BI tools
+CREATE USER IF NOT EXISTS 'read_user' IDENTIFIED BY 'read-password';
+GRANT SELECT_PRIV ON analytics.* TO 'read_user';
+```
+
+### 3. Create tables
+
+See [Create a database and table](#create-a-database-and-table) below. With a single BE you **must** use `"replication_num" = "1"`; with 3 BEs use `"3"` (the production default).
+
+To keep this reproducible, store your bootstrap SQL in version control and apply it with:
 
 ```bash
-# Re-apply the grants (idempotent — safe to re-run)
-docker exec -i doris-fe mysql -h 127.0.0.1 -P 9030 -u root -p"$DORIS_ROOT_PASSWORD" \
-  < initdb.d/03-governance.sql
+docker exec -i doris-fe mysql -h 127.0.0.1 -P 9030 -u root < bootstrap.sql
 ```
-
-If you edit `01-infra-setup.sh` and want the changes reflected, read it, adapt the inline SQL, and execute it against the FE by hand — the `.sh` file itself isn't something you can pipe through `mysql`.
-
-> **Replication note:** Use `"replication_num" = "1"` when creating tables with 1 BE. With 3 BEs, use `"3"` (the production default). Table creation is intentionally outside the initdb scripts — create them manually or via a migration tool once the cluster is fully healthy.
 
 ## Scaling to production-like setup
 
@@ -335,7 +316,7 @@ Doris supports three table models:
 
 ```sql
 -- Stream Load (small files, via HTTP)
-curl -u root:$DORIS_ROOT_PASSWORD -T data.csv \
+curl -u root:<root-password> -T data.csv \
   -H "format: csv" \
   -H "column_separator: ," \
   http://127.0.0.1:8030/api/my_db/my_table/_stream_load
@@ -420,15 +401,13 @@ The Doris entrypoint automatically appends `priority_networks = <subnet>` to bot
 
 This is why `priority_networks` and port definitions are intentionally excluded from the config files. Do not add them manually.
 
-### DORIS_ROOT_PASSWORD env var does not set the password
+### Root password is not set from an env var
 
-The `DORIS_ROOT_PASSWORD` environment variable in the official Docker image is unreliable — it does not always set the root password. Connections from inside the FE container (`localhost`) also bypass authentication entirely — this is normal Doris behavior.
-
-**Workaround:** The `doris-init` sidecar in `docker-compose.yml` runs `ALTER USER 'root'@'%' IDENTIFIED BY '...'` as its first init step (in `01-infra-setup.sh`), using the `DORIS_ROOT_PASSWORD` value from `.env`. The password is enforced for external connections (DBeaver, JDBC, any remote client). If the value is empty, the ALTER is a no-op and root stays passwordless — fine for local dev.
+The `DORIS_ROOT_PASSWORD` environment variable in the official Docker image is unreliable — it does not always set the root password — so this template does not use it. Set the password once by hand instead ([First-time setup](#first-time-setup)). Connections from inside the FE container (`localhost`) bypass authentication entirely — this is normal Doris behavior.
 
 ### Web UI has no authentication
 
-The Web UI on port 8030 does not enforce authentication. `DORIS_ROOT_PASSWORD` only protects the MySQL protocol (port 9030). This is by design in Doris. For local dev this is fine. In production, restrict port 8030 via firewall or reverse proxy.
+The Web UI on port 8030 does not enforce authentication. The root password only protects the MySQL protocol (port 9030). This is by design in Doris. For local dev this is fine. In production, restrict port 8030 via firewall or reverse proxy.
 
 ## Troubleshooting
 
