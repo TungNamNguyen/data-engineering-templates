@@ -2,7 +2,11 @@
 
 Apache Doris is a high-performance, real-time analytical database. It uses a MySQL-compatible protocol, so you can connect with any MySQL client, JDBC driver, or BI tool.
 
-This is a **lightweight, single-node** setup (1 FE + 1 BE) with production-ready container settings (persistent volumes, healthchecks, restart policy, tuned `fe.conf`/`be.conf`), and a commented 3 FE + 3 BE layout built into the same files for when you need HA. There is no init-script mechanism — databases, users, and tables are yours to create (see [First-time setup](#first-time-setup)).
+This template runs **1 FE + 1 BE** with production-grade container settings (persistent volumes, healthchecks, ulimits, restart policy, tuned `fe.conf`/`be.conf`), and carries a commented **3 FE + 3 BE** layout in the same files.
+
+> **What "production" means for Doris.** The [official sizing guide](https://doris.apache.org/docs/install/preparation/cluster-planning/) classifies 1 FE + 1 BE as a *development and test* topology: one BE means one data replica, so a lost disk is lost data, and one FE means no metadata failover. Production is **≥ 3 FE Followers + ≥ 3 BE** with `replication_num = 3`. The container-level settings here are production-grade in both topologies; the node count is what you scale when you go live — see [Scaling to production](#scaling-to-production).
+
+There is no init-script mechanism — databases, users, and tables are yours to create (see [First-time setup](#first-time-setup)).
 
 ## Architecture
 
@@ -22,22 +26,57 @@ docker --version    # 20.10+
 docker compose version  # v2.0+
 ```
 
-### 2. Host kernel setting (required)
+### 2. Host requirements
 
-`vm.max_map_count` is a Linux kernel parameter that limits how many memory-mapped file regions a process can have. Doris BE maps tablet data files (segments, indexes) into memory for fast reads — even a small dataset can create thousands of mappings. The Linux default (65,536) is far too low; Doris requires at least **2,000,000**.
+These are host-level settings from the Doris [OS Checking](https://doris.apache.org/docs/install/preparation/os-checking/) and [Environment Checking](https://doris.apache.org/docs/3.x/install/preparation/env-checking/) guides. None of them can be set from inside a container.
 
-This is a **one-time host-level setting**. It cannot be configured inside Docker. Without it, BE will refuse to start.
+| Setting | Dev | Production | Why |
+|---|---|---|---|
+| CPU supports **AVX2** | required | required | The official image is built with AVX2 vectorization; BE crashes on the first query without it |
+| `vm.max_map_count ≥ 2000000` | required | required | BE mmaps every tablet segment; the kernel default (65,536) is far too low and BE refuses to start |
+| **Swap disabled** | optional (see below) | required | The kernel may page BE memory out under pressure, which wrecks query latency and can trip the memory tracker |
+| Transparent Huge Pages = `madvise` | recommended | required | Avoids latency spikes and memory fragmentation from THP compaction |
+| `net.ipv4.tcp_abort_on_overflow = 1` | optional | recommended | Fail fast on listen-queue overflow instead of silently dropping SYNs |
+| CPU governor = `performance` | optional | recommended | Prevents frequency scaling from adding query latency |
+| Open file limit `nofile = 1000000` | done by compose | done by compose | Set via `ulimits:` in `docker-compose.yml` |
+| Clock sync (NTP) | n/a | required with multiple hosts | FE metadata sync tolerates < 5 s skew between FE nodes |
 
 ```bash
-# Check current value
-sysctl vm.max_map_count
+# AVX2 — must print at least one line
+grep -m1 -o avx2 /proc/cpuinfo
 
-# Set it (required: >= 2000000)
+# Memory-map limit (required)
 sudo sysctl -w vm.max_map_count=2000000
-
-# Persist across reboots
 echo "vm.max_map_count=2000000" | sudo tee -a /etc/sysctl.conf
+
+# Swap (required in production; see note)
+sudo swapoff -a
+sudo sed -i.bak '/\sswap\s/s/^/#/' /etc/fstab
+
+# Transparent Huge Pages
+echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
+
+# TCP overflow behaviour
+sudo sysctl -w net.ipv4.tcp_abort_on_overflow=1
+echo "net.ipv4.tcp_abort_on_overflow=1" | sudo tee -a /etc/sysctl.conf
+
+# CPU governor (skip on VMs / cloud instances that do not expose it)
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
+
+> **Swap and the BE entrypoint shim.** BE's `start_be.sh` refuses to start if the host has swap enabled. For dev convenience, `docker-compose.yml` overrides the BE entrypoint with a fake `swapon` that hides swap from that check — so BE starts on a laptop with swap on. That shim **bypasses the check, it does not fix the problem**: in production, disable swap on the host as above. Once swap is off you can delete the `entrypoint:` block from the BE service and use the image default.
+
+#### Hardware sizing (from the docs)
+
+| | Dev / test minimum | Production recommended |
+|---|---|---|
+| FE | 8 cores, 8 GB, SSD 10 GB+ | 16+ cores, 64 GB+, SSD 100 GB+ |
+| BE | 8 cores, 16 GB, 50 GB+ | 16+ cores, 64 GB+, SSD, 3 nodes |
+| Memory rule | — | BE: cores × 8 GB; FE ≥ 16 GB |
+| BE disk | — | data volume × 3 replicas × 1.4 (compaction headroom) |
+
+The commented `deploy.resources` blocks in `docker-compose.yml` (8 CPU / 16 GB) are container caps, not sizing advice — raise them to match your host.
 
 ### 3. Copy environment file
 
@@ -81,7 +120,7 @@ docker exec -it doris-fe mysql -h 127.0.0.1 -P 9030 -u root -p
 
 Open [http://localhost:8030](http://localhost:8030) in your browser.
 
-> **Note:** The Web UI (port 8030) does **not** enforce authentication — this is by design in Doris. It's an internal admin interface for monitoring cluster status, query profiles, and metadata. The root password only applies to the MySQL protocol (port 9030). This is fine for local dev since the port is only on localhost. In production, restrict access via firewall or reverse proxy.
+> **Note:** The Web UI (port 8030) does **not** enforce authentication — this is by design in Doris. It's an internal admin interface for monitoring cluster status, query profiles, and metadata. The root password only applies to the MySQL protocol (port 9030). That is why 8030 (and BE's 8040) are bound to `127.0.0.1` on the host by default via `ADMIN_BIND_ADDR`. If you need them reachable from other machines (e.g. Stream Load from an ETL host), set `ADMIN_BIND_ADDR=0.0.0.0` and put a firewall or authenticating reverse proxy in front.
 
 ### DBeaver
 
@@ -139,13 +178,14 @@ apache-doris/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FE_IMAGE` | `apache/doris:fe-3.0.3` | FE Docker image |
-| `BE_IMAGE` | `apache/doris:be-3.0.3` | BE Docker image |
+| `FE_IMAGE` | `apache/doris:fe-3.0.8` | FE Docker image |
+| `BE_IMAGE` | `apache/doris:be-3.0.8` | BE Docker image |
 | `FE_QUERY_PORT` | `9030` | MySQL protocol port |
 | `FE_HTTP_PORT` | `8030` | FE Web UI port |
 | `FE_EDIT_LOG_PORT` | `9010` | FE inter-node replication port |
 | `BE_HEARTBEAT_PORT` | `9050` | BE heartbeat port |
 | `BE_WEBSERVER_PORT` | `8040` | BE HTTP status port |
+| `ADMIN_BIND_ADDR` | `127.0.0.1` | Host interface for the unauthenticated admin ports (8030, 8040). `0.0.0.0` exposes them to the network — firewall or reverse-proxy them if you do. |
 
 > There is no root-password variable. The image's `DORIS_ROOT_PASSWORD` hook is unreliable, so the password is set once by hand after first startup — see [First-time setup](#first-time-setup).
 
@@ -154,10 +194,12 @@ apache-doris/
 Edit `.env`:
 
 ```bash
-# Current stable
-FE_IMAGE=apache/doris:fe-3.0.3
-BE_IMAGE=apache/doris:be-3.0.3
+# Latest 3.0.x patch release (bug fixes only — safe to move between patches)
+FE_IMAGE=apache/doris:fe-3.0.8
+BE_IMAGE=apache/doris:be-3.0.8
 ```
+
+Keep FE and BE on the **same** tag. Moving to a new minor/major line (3.1, 4.0) is an upgrade, not a tag swap — read the release notes and upgrade FE before BE per the [upgrade guide](https://doris.apache.org/docs/admin-manual/cluster-management/upgrade/).
 
 Then recreate containers:
 
@@ -184,13 +226,14 @@ SHOW BACKEND CONFIG LIKE "%key%";
 
 > **Note:**
 > - **File permissions:** Make sure the user running Docker has read access to the `conf/` directory.
-> - **Ports and `priority_networks`** are intentionally excluded from the config files. The Doris entrypoint handles these automatically based on the container's IP. Do not add port definitions or `priority_networks` manually — the entrypoint appends `priority_networks` on first startup and skips it on subsequent restarts.
+> - **Ports** are intentionally excluded from the config files — the container listens on the defaults and the Doris entrypoint derives everything from the container's IP. **`priority_networks`** is appended by the entrypoint every time it initializes an empty meta/storage directory (no duplicate check — see [Known issues](#config-files--priority_networks-appending)); the committed value matches the compose subnet, so the duplicates are harmless.
 > - **Ports — `.env` vs container:** The `.env` ports (e.g. `FE_QUERY_PORT=9030`) control the **host-side** mapping only. The container listens on the default ports internally. Only change `.env` if you have a port conflict on your host.
 
 ### FE config (conf/fe.conf)
 
 | Setting | Local dev | Production | What it does |
 |---------|-----------|------------|--------------|
+| `lower_case_table_names` | 1 | 1 | Table names stored/compared lowercase (docs recommendation). **Cannot be changed after the cluster is created** — decide before the first `up`. |
 | `JAVA_OPTS_FOR_JDK_17` (Xmx) | 1 GB | 16 GB | JVM heap size. FE stores metadata in memory. |
 | `qe_max_connection` | 256 | 2048 | Max concurrent client connections |
 | `max_running_txn_num_per_db` | 100 | 2000 | Max concurrent transactions per database |
@@ -255,7 +298,13 @@ To keep this reproducible, store your bootstrap SQL in version control and apply
 docker exec -i doris-fe mysql -h 127.0.0.1 -P 9030 -u root < bootstrap.sql
 ```
 
-## Scaling to production-like setup
+## Scaling to production
+
+This is what turns the dev/test topology into the one the Doris docs call production: ≥ 3 FE for metadata HA, ≥ 3 BE for 3-replica storage.
+
+### Step 0: Host checklist
+
+Work through [Host requirements](#2-host-requirements) — in particular disable swap for real and remove the BE `entrypoint:` shim. If the nodes end up on different hosts, make sure NTP is running on all of them.
 
 ### Step 1: Uncomment extra nodes in docker-compose.yml
 
@@ -375,9 +424,7 @@ docker compose down -v
 
 Doris BE's `start_be.sh` **hardcodes** a swap check that exits if the host has swap enabled. There is no config flag to disable it. This affects all versions (2.1.x, 3.0.x).
 
-**Workaround:** The `docker-compose.yml` overrides the BE entrypoint with an inline one-liner that creates a fake `swapon` command (reports no swap) before calling the original entrypoint. This is transparent and has no side effects.
-
-If your host has swap disabled, you can remove the `entrypoint` line from the BE service and it will use the default.
+**Dev workaround:** The `docker-compose.yml` overrides the BE entrypoint with an inline one-liner that creates a fake `swapon` command (reports no swap) before calling the original entrypoint. It lets BE start on a workstation with swap on; it does **not** make swap safe for Doris. In production, disable swap on the host (see [Host requirements](#2-host-requirements)) and remove the `entrypoint:` block from the BE service.
 
 ### FE_SERVERS and BE_ADDR require IP addresses, not hostnames
 
@@ -397,9 +444,9 @@ Then change the subnet and all IPs in `docker-compose.yml` to a free range.
 
 ### Config files — `priority_networks` appending
 
-The Doris entrypoint automatically appends `priority_networks = <subnet>` to both `fe.conf` and `be.conf` on startup. Since these files are bind-mounted from the host, the change persists. The entrypoint checks if the line already exists before appending, so it only happens **once** — subsequent restarts do not add duplicates.
+The Doris entrypoint (`init_fe.sh` / `init_be.sh`) appends `priority_networks = <subnet>` to `fe.conf` / `be.conf` whenever it initializes an **empty** meta/storage directory — i.e. on the first `up` and after every `docker compose down -v`. It does **not** check whether the line is already there, so a bind-mounted `conf/` collects one duplicate line per re-init. Restarts against an existing volume do not append.
 
-This is why `priority_networks` and port definitions are intentionally excluded from the config files. Do not add them manually.
+All copies carry the same value (`10.10.80.0/24`, matching the compose subnet), so Doris behaves identically; if the extra lines bother you, delete them — `git checkout -- conf/` restores the committed files. If you change the subnet in `docker-compose.yml`, update the committed `priority_networks` line in both files to match.
 
 ### Root password is not set from an env var
 
@@ -407,7 +454,7 @@ The `DORIS_ROOT_PASSWORD` environment variable in the official Docker image is u
 
 ### Web UI has no authentication
 
-The Web UI on port 8030 does not enforce authentication. The root password only protects the MySQL protocol (port 9030). This is by design in Doris. For local dev this is fine. In production, restrict port 8030 via firewall or reverse proxy.
+The Web UI on port 8030 does not enforce authentication. The root password only protects the MySQL protocol (port 9030). This is by design in Doris. The template binds 8030 and 8040 to `127.0.0.1` on the host (`ADMIN_BIND_ADDR`); if you expose them, restrict access via firewall or reverse proxy.
 
 ## Troubleshooting
 
@@ -417,6 +464,14 @@ The Web UI on port 8030 does not enforce authentication. The root password only 
 sudo sysctl -w vm.max_map_count=2000000
 echo "vm.max_map_count=2000000" | sudo tee -a /etc/sysctl.conf
 ```
+
+### FE stays unhealthy: `The configuration of 'lower_case_table_names' does not support modification`
+
+```
+ERROR (stateListener) [Env.checkLowerCaseTableNames()] The configuration of 'lower_case_table_names' does not support modification, the expected value is 0, but the actual value is 1
+```
+
+The value in `conf/fe.conf` differs from the one the cluster was created with — Doris stores it in metadata and refuses to start on a mismatch. Either put `fe.conf` back to the original value (`0` if the volume predates this template's `lower_case_table_names = 1`), or wipe the cluster with `docker compose down -v` and start fresh. There is no in-place migration.
 
 ### "Failed to find enough host" when creating tables
 

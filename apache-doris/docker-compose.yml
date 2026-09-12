@@ -1,4 +1,10 @@
-# Apache Doris — lightweight, production-ready single-node setup (1 FE + 1 BE).
+# Apache Doris — 1 FE + 1 BE with production-grade container settings.
+#
+# Per the Doris docs, 1 FE + 1 BE is a dev/test topology: one BE means one
+# replica, so a lost disk is lost data. Production is >= 3 FE + >= 3 BE —
+# the extra nodes are pre-written below, commented out. Everything else
+# (volumes, healthchecks, ulimits, tuned conf/, restart policy) is the same
+# in both topologies.
 #
 # Usage:
 #   cp .env.example .env
@@ -7,21 +13,23 @@
 # Connect via MySQL client (root has no password until you set one — see README):
 #   mysql -h 127.0.0.1 -P 9030 -u root
 #
-# Web UI (no auth):
+# Web UI (no auth, bound to 127.0.0.1 by default):
 #   http://localhost:8030
 #
 # ──────────────────────────────────────────────────────────────────────
-# IMPORTANT — Host kernel requirement (required for BE):
-#   sudo sysctl -w vm.max_map_count=2000000
-#   echo "vm.max_map_count=2000000" | sudo tee -a /etc/sysctl.conf
+# Host requirements (see README "Prerequisites" for the full list):
+#   sudo sysctl -w vm.max_map_count=2000000     # required — BE refuses to start
+#   sudo swapoff -a                             # required in production
+#   grep -q avx2 /proc/cpuinfo                  # required — official image is AVX2-only
 #
 # ──────────────────────────────────────────────────────────────────────
-# Production-like setup (3 FE + 3 BE):
+# Production setup (3 FE + 3 BE):
 #
 # 1. Uncomment doris-fe-2, doris-fe-3, doris-be-2, doris-be-3 and
 #    their volumes below.
 # 2. Uncomment deploy.resources blocks for resource limits.
-# 3. Create tables with: PROPERTIES("replication_num" = "3")
+# 3. Switch conf/fe.conf and conf/be.conf to the "# Production:" values.
+# 4. Create tables with: PROPERTIES("replication_num" = "3")
 # ──────────────────────────────────────────────────────────────────────
 
 services:
@@ -34,7 +42,8 @@ services:
       FE_ID: 1
     ports:
       - "${FE_QUERY_PORT:-9030}:9030"
-      - "${FE_HTTP_PORT:-8030}:8030"
+      # Web UI + REST API have no auth — bound to loopback by default.
+      - "${ADMIN_BIND_ADDR:-127.0.0.1}:${FE_HTTP_PORT:-8030}:8030"
     volumes:
       - ./conf/fe.conf:/opt/apache-doris/fe/conf/fe.conf
       - doris-fe-meta:/opt/apache-doris/fe/doris-meta
@@ -151,7 +160,8 @@ services:
       FE_SERVERS: "fe1:10.10.80.2:${FE_EDIT_LOG_PORT:-9010}"
       BE_ADDR: "10.10.80.3:${BE_HEARTBEAT_PORT:-9050}"
     ports:
-      - "${BE_WEBSERVER_PORT:-8040}:8040"
+      # BE status page — only FE needs it; loopback-only on the host.
+      - "${ADMIN_BIND_ADDR:-127.0.0.1}:${BE_WEBSERVER_PORT:-8040}:8040"
     volumes:
       - ./conf/be.conf:/opt/apache-doris/be/conf/be.conf
       - doris-be-storage:/opt/apache-doris/be/storage
@@ -269,7 +279,7 @@ volumes:
   doris-fe-log:
   doris-be-storage:
   doris-be-log:
-  # ── Uncomment for production-like setup ──
+  # ── Uncomment for production setup (3 FE + 3 BE) ──
   # doris-fe-2-meta:
   # doris-fe-2-log:
   # doris-fe-3-meta:
