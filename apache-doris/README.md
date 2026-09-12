@@ -241,19 +241,22 @@ Set `TRANSFORM_USER_PASSWORD` and `READ_USER_PASSWORD` in `.env` before the firs
 
 ### When init scripts run
 
-`doris-init` is a one-shot sidecar (`restart: "no"`) — after a successful first run it stays exited, and subsequent `docker compose up -d` calls do nothing. The scripts only really "run once" against a fresh cluster.
+> **Write idempotent SQL.** Unlike postgres/mysql/clickhouse — whose entrypoints only run init scripts against an empty data directory — the `doris-init` sidecar runs every time you `docker compose up -d`. Use `IF NOT EXISTS` guards so re-runs are no-ops. The included scripts already do.
+
+Like mssql, **Doris is an outlier** — the Doris image has no built-in `initdb.d` mechanism, so a sidecar (`doris-init`, `restart: "no"`) plays that role. Compose starts an exited one-shot container again on every `up` or `restart`, and `down` removes it entirely so the next `up` recreates it. That means **editing a script and running `docker compose up -d` *does* re-apply the change** — provided the script is idempotent (the bundled ones are).
 
 | Action | Cluster state | Init runs? |
 |---|---|---|
 | First `docker compose up -d` | empty | **yes** |
-| `docker compose restart` | populated | no (exited sidecar is not restarted) |
-| `docker compose down` then `up -d` | populated | no — sidecar is already `Exited (0)`, compose reuses it |
+| `docker compose restart` | populated | **yes** — `restart` also restarts exited containers |
+| `docker compose up -d` again (no `down`) | populated | **yes** — compose restarts the exited sidecar; idempotent guards matter |
+| `docker compose down` then `up -d` | populated | **yes** — sidecar is recreated and runs again |
 | `docker compose down -v` then `up -d` | wiped → empty | **yes** |
-| Editing a file in `initdb.d/`, then `up -d` | populated | no — the file change is irrelevant until the volume is wiped or the sidecar is force-recreated |
+| Editing a file in `initdb.d/`, then `up -d` | populated | **yes** — the new content is applied on the next `up` |
 
-Treat `initdb.d/` as **bootstrap, not migrations**. For ongoing schema changes, apply SQL manually or with a real migration tool.
+Treat `initdb.d/` as **bootstrap, not migrations**. The every-`up` re-run is a convenience for iterating on the bootstrap itself, not a substitute for a real migration tool once the project is live.
 
-To re-run the full pipeline without wiping the cluster (make sure the scripts are idempotent — the included ones use `IF NOT EXISTS` / `ALTER USER`):
+To re-run the sidecar on demand without restarting FE/BE:
 
 ```bash
 docker compose up -d --force-recreate doris-init
