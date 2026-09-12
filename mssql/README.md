@@ -167,7 +167,7 @@ SQL Server splits create permissions by scope: schema ownership (via `AUTHORIZAT
 | Action | Data volume | Scripts run? |
 |---|---|---|
 | First `docker compose up -d` | empty | **yes** |
-| `docker compose restart` | populated | no (sidecar is not restarted by `restart`) |
+| `docker compose restart` | populated | **yes** — `restart` also restarts exited containers; idempotent guards matter |
 | `docker compose down` then `up -d` | populated | **yes** — sidecar runs again; idempotent guards matter |
 | `docker compose down -v` then `up -d` | wiped → empty | **yes** |
 | Editing a file in `initdb.d/`, then `up -d` | populated | **yes** — the new content is applied on the next `up` |
